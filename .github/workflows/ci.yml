@@ -21,6 +21,7 @@ jobs:
           python3 -I tools/audit_trade_goods.py --selftest
           python3 -I tools/build_library_books.py --selftest
           python3 -I tools/build_quest_availability.py --selftest
+          python3 -I tools/build_consumable_tiers.py --selftest
           python3 -I tools/build_weapon_skills.py --selftest
           python3 -I tools/build_locked_items.py --selftest
       - name: Tools (undefined names)

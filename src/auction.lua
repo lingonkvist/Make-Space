@@ -7,6 +7,8 @@
 --   Blocker       why a green must not stand (auction pays more)
 --   PriceLine     the tooltip line for a hint that suggests the auction house
 --   SlotValueIfKnown, SaleValue   what a stack or one item fetches
+--   SteadyValue   what one item fetches for weighing loot against junk, trusting
+--                 only a live Auctionator price that has held steady
 
 MakeSpace = MakeSpace or {}
 MakeSpace.Auction = {}
@@ -177,14 +179,34 @@ local function saleValue(item)
   return math.max(vendor, math.floor(MakeSpace.Curves.SaleValue(ceiling, source, MakeSpace.Curves.TypeOf(item))))
 end
 
+--- What one item is worth when loot is weighed against the junk it would replace.
+-- The vendor price, unless Auctionator has a fresh price that the recent days all
+-- agree on (see Live.IsSteady): then what that fetches after the auction cut, if
+-- more. A shipped snapshot price, a lone reading or a versioned item (Auctionator
+-- files every version under one key) never counts, so the value is never the
+-- optimistic side of a guess.
+-- @return number copper per item
+local function steadyValue(item)
+  local vendor = item.sellPrice or 0
+  if not isTradeable(item) or item.bonusKey then return vendor end
+  if not (item.livePrice and item.liveSteady) then return vendor end
+  local net = math.floor(MakeSpace.Curves.SaleValue(item.livePrice, "live", MakeSpace.Curves.TypeOf(item)))
+  return math.max(vendor, net)
+end
+
 --- "Vendor 5c, auction about 8s": the real prices, not the rounded ones.
--- The auction side of a price is a guess, so it is shown rounded up to whole
--- silver: "4s 87c" reads as "5s". Under a silver the copper stays, since rounding
--- 20c up to 1s would be a different guess.
+-- The auction side of a price is a guess, so it is shown in whole silver:
+-- "4s 87c" reads as "5s". Under 10s it rounds to the nearest silver (a guess
+-- of 1s 3c is "1s", not "2s"), from 10s up it rounds up so a dear item is
+-- never undersold. Under a silver the copper stays, since rounding 20c to 1s
+-- would be a different guess.
 local COPPER_PER_SILVER = 100
-local function roundUpToSilver(copper)
+local ROUND_UP_FROM = 10 * COPPER_PER_SILVER
+local function roundToSilver(copper)
   if copper < COPPER_PER_SILVER then return copper end
-  return math.ceil(copper / COPPER_PER_SILVER) * COPPER_PER_SILVER
+  local silver = copper / COPPER_PER_SILVER
+  if copper < ROUND_UP_FROM then silver = math.floor(silver + 0.5) else silver = math.ceil(silver) end
+  return silver * COPPER_PER_SILVER
 end
 
 local function priceNote(item, ceiling, source)
@@ -194,7 +216,7 @@ local function priceNote(item, ceiling, source)
   local approx = source == "live" and "about " or "up to "
   local vendor = item.sellPrice or 0
   local vendorText = vendor > 0 and ("vendor " .. money(vendor)) or "no vendor price"
-  return vendorText:sub(1, 1):upper() .. vendorText:sub(2) .. ", auction " .. approx .. money(roundUpToSilver(ceiling))
+  return vendorText:sub(1, 1):upper() .. vendorText:sub(2) .. ", auction " .. approx .. money(roundToSilver(ceiling))
 end
 
 --- The dearest price Auctionator has shown for this item, however old or
@@ -323,9 +345,24 @@ MakeSpace.Auction.SnapshotCeilingFor = snapshotCeilingFor
 MakeSpace.Auction.LiveCeiling = liveCeiling
 MakeSpace.Auction.CeilingFor = ceilingFor
 MakeSpace.Auction.SaleValue = saleValue
+MakeSpace.Auction.SteadyValue = steadyValue
 MakeSpace.Auction.PriceNote = priceNote
 MakeSpace.Auction.Blocker = blocker
+--- The same price line, but a live Auctionator price counts only when it has held
+-- steady (see Live.IsSteady). A lone reading is dropped, so the line falls back
+-- to the shipped snapshot ("up to") or to nothing.
+local function steadyPriceLine(item, state)
+  if item.livePrice and not item.liveSteady then
+    local withoutLive = {}
+    for key, value in pairs(item) do withoutLive[key] = value end
+    withoutLive.livePrice, withoutLive.liveAge = nil, nil
+    return priceLine(withoutLive, state)
+  end
+  return priceLine(item, state)
+end
+
 MakeSpace.Auction.PriceLine = priceLine
+MakeSpace.Auction.SteadyPriceLine = steadyPriceLine
 MakeSpace.Auction.SlotValueIfKnown = slotValueIfKnown
 MakeSpace.Auction.SnapshotTooOld = snapshotTooOld
 

@@ -8,7 +8,7 @@ MakeSpace = nil
 local DATA_FILES = {
   "reagent_professions", "reagent_chains", "vendor_reagents", "class_reagents",
   "quest_items", "mana_consumables", "protected_items", "auction_prices_us_alliance", "auction_prices_us_horde",
-  "auction_prices_eu_alliance", "auction_prices_eu_horde", "library_books", "quest_availability",
+  "auction_prices_eu_alliance", "auction_prices_eu_horde", "library_books", "quest_availability", "consumable_tiers",
   "weapon_skills", "locked_items",
 }
 for _, file in ipairs(DATA_FILES) do
@@ -228,5 +228,57 @@ describe("ProtectedItems", function()
       assert.is_truthy(#note > 0 and #note <= 62)
     end
     assert.is_truthy(count > 0)
+  end)
+end)
+
+
+describe("ConsumableTiers", function()
+  local tiers = MakeSpace.Data.ConsumableTiers
+
+  it("has a healing and a mana line of at least four tiers, weakest first", function()
+    for _, key in ipairs({ "health", "mana" }) do
+      local line = tiers.potions[key]
+      assert.is_truthy(#line >= 4)
+      local lastLevel = 0
+      for _, tier in ipairs(line) do
+        assert.are.equal("string", type(tier.name))
+        assert.is_truthy(tier.level >= lastLevel)
+        lastLevel = tier.level
+        assert.is_truthy(#tier.ids >= 1)
+        for _, id in ipairs(tier.ids) do assert.are.equal("number", type(id)) end
+      end
+    end
+  end)
+
+  it("lists the classic potions in their tiers", function()
+    local function tierOf(line, id)
+      for _, tier in ipairs(tiers.potions[line]) do
+        for _, itemID in ipairs(tier.ids) do if itemID == id then return tier.name end end
+      end
+    end
+    assert.are.equal("Superior Healing Potion", tierOf("health", 3928))
+    assert.are.equal("Major Healing Potion", tierOf("health", 13446))
+    assert.are.equal("Major Mana Potion", tierOf("mana", 13444))
+  end)
+
+  it("gives every potion ID to one tier only", function()
+    local seen = {}
+    for _, line in pairs(tiers.potions) do
+      for _, tier in ipairs(line) do
+        for _, id in ipairs(tier.ids) do
+          assert.is_nil(seen[id])
+          seen[id] = true
+        end
+      end
+    end
+  end)
+
+  it("has the bandages in order, each with the recipe that makes it", function()
+    assert.is_truthy(#tiers.bandages >= 6)
+    assert.are.equal("Linen Bandage", tiers.bandages[1].name)
+    for _, bandage in ipairs(tiers.bandages) do
+      assert.are.equal("number", type(bandage.id))
+      assert.are.equal("number", type(bandage.recipe))
+    end
   end)
 end)

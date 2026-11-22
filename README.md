@@ -1,6 +1,6 @@
 # Make Space
 
-Debloat your bags. Colored dots on your bag items that show what to delete, vendor, bank or keep. Never deletes anything.
+Debloat your bags. Colored dots on your bag items that show what to delete, vendor, bank or keep.
 
 ## The problem
 
@@ -20,7 +20,6 @@ Hover an item and the tooltip explains the dot. On an item with no dot it names 
 
 An item the game calls a quest item, with no quest for you in the data, says "Quest item, no quest found" on its tooltip. Quests only another class or race can take are ignored, and so are quests for a primary profession you do not have (unless the quest is already in your log; Cooking, First Aid and Fishing count, since anyone can learn them) and the crafting writs ("Craftsman's Writ: ...") unless one is in your log.
 
-You make every deletion yourself. Make Space has no delete button, no auto-destroy and no popups.
 
 ## What gets a dot
 
@@ -51,9 +50,10 @@ Yellow:
 - "Bank it" for a reagent when your skill is past one of its uses and the next one is far ahead, since every use is judged on its own (Linen Cloth with First Aid done and Blacksmithing 200 far off).
 - A reagent stack worth under the same 50c bar gets no bank hint, since banking it is only clutter. It needs a known price.
 - Reagents you have outleveled. Make Space follows the whole chain, so copper bars stay safe while bronze or a later recipe still uses them, as long as you have the profession that makes the conversion (a smith without Leatherworking cannot turn Light Leather into the Medium Leather smithing uses). The hint appears once the last recipe that needs the item, directly or through what it is turned into, has turned green (the skill-up chance is then under half), and the tooltip says "Recipes turn green at Profession N", the skill where the color changes in your profession window. Data built before 0.6.1 uses the skill the best recipe is learned at instead. A quest that wants the item does not hold the hint back. The tooltip adds one quest row under the hint (and below the skill ranges when there is no hint): "In log: Name" when a quest in your log wants the item, and a grey "[level] Name (Zone)" for a reagent few recipes use. Common materials get a row only for a quest in your log. Left out are quests you have finished, repeatable quests, quests 10 or more levels below you and the standing turn-ins (cloth donations and the "Horde Needs" and "Alliance Needs" quests).
-- Food, drink, potions, elixirs, flasks and stat scrolls (Strength, Agility, Stamina, Intellect, Spirit, Protection) that need a level 20 or more below yours. Elixirs and flasks count only when they give stats, health or mana, so water breathing, speed and the like are left alone, and so is anything whose tooltip carries its own level limit ("cannot be used above level 20", "cures diseases up to level 25"). Food with an effect is left alone, and Enchanters keep scrolls that are Enchanting reagents. When the auction house pays clearly more than a vendor for one of these, the tooltip adds the price line (for example `Vendor 5c, auction about 8s`), so the hint never reads as "throw it away".
-- Bandages that heal under 15% of your health. The tooltip says what it heals, for example `Heals 9% of your health (400 of 4500)`. Without that to go on, a bandage follows its required level like other consumables.
-- Mana potions and drinks, if your class has no mana.
+- Food, drink, potions, elixirs, flasks and stat scrolls (Strength, Agility, Stamina, Intellect, Spirit, Protection) that need a level 10 or more below yours (15 or more from level 55, since much of the best needs 45). Food, drink and stat scrolls get that 10 only when your bags hold a better one of the same kind that you can already use (food for food, drink for drink, the same stat for scrolls). Better means a higher level or, at the same level, a stack worth more, so of two foods at one level the cheaper stack gets the hint (stacks of the same item are added up). Otherwise they wait until 15 levels below, since an older one is still better than nothing. Elixirs and flasks count only when they give stats, health or mana, so water breathing, speed and the like are left alone, and so is anything whose tooltip carries its own level limit ("cannot be used above level 20", "cures diseases up to level 25"). Food with an effect is left alone, and Enchanters keep scrolls that are Enchanting reagents. When the auction house pays clearly more than a vendor for one of these, the tooltip adds the price line (for example `Vendor 5c, auction about 8s`), so the hint never reads as "throw it away". A healing or mana potion also says which one to use instead: `Best for you: Major Healing Potion (level 45)`, the strongest tier of that kind your level allows (never a mana potion for a class with no mana).
+- Bandages that heal under 20% of your health. The tooltip says how much it heals, for example `Weak bandage (heals 9%)`. When you have learned a better bandage in First Aid, the line under it names the best one, for example `Best for you: Heavy Silk Bandage`; with no First Aid, or when this is already the best you make, there is no second line. Without the heal amount, a bandage follows its required level like other consumables.
+- Mana potions and drinks, if your class has no mana. Their price line says "auction about" only for an Auctionator price that has held steady for several days; otherwise it falls back to the shipped price list ("up to") or shows nothing.
+- Scrolls of Intellect for a warrior or rogue, who get nothing from it (Enchanters keep them when they are Enchanting reagents).
 - Crafting materials that drop (no vendor sells them) and that none of your professions use. It waits until both primary profession slots are taken, and stays quiet for anything Cooking, First Aid or Fishing uses (anyone can learn those) and for characters with only gathering professions. The tooltip shows the vendor and auction prices when there is one on file. The bank does not show it.
 - Library books, with who to hand them in to (Garion Wendell in Stormwind, Owen Thadd in Undercity). A deleted book cannot be looted again.
 - Blood Shards on a Horde character: trade 4 to Mangletooth for a buff.
@@ -113,7 +113,11 @@ When the loot window is open and your bags cannot hold everything:
 - Every other dot goes quiet, so the glow is the only thing to act on.
 - Loot worth less than your cheapest junk gets a red X in the loot window, and its tooltip says "Skip it".
 - Loot worth a slot gets a green check, and its tooltip says "Take it". That includes quest items and loot you must make room for by hand. Reagents are weighed by what they sell for (vendor or auction), so a cheap or outleveled reagent never pushes out a gray that is worth more.
-- Deleting the glowing item moves the glow to the next cheapest.
+- A button under the loot window (`Delete 2 items`, or `Delete` and the item's name when it is one) removes exactly the glowing items in one click. Hover it to see the list and what each sells for. Nothing is deleted if your bags changed since the last scan.
+- When there is nothing to click, one line above the loot window says why: the loot is not worth a slot, there is nothing safe to delete, or you have to make room by hand.
+- Deleting a glowing item yourself moves the glow to the next cheapest.
+
+Loot and junk are weighed by what a vendor pays, or by what the auction house pays after its cut when Auctionator has a recent price that the last few days agree on. A price that is old, a single reading, or for an item with versions is not used, so the weighing never leans on a price that may be too high. Soulbound items are only worth their vendor price.
 
 Loot that joins a stack you already carry does not count as needing a slot. Quiver, ammo and profession bags are not counted as room.
 
@@ -136,6 +140,7 @@ Troubleshooting:
 - `/makespace glow`: test the delete glow on your first item.
 - `/makespace status`: version, bag UI and counts.
 - `/makespace bank`: what Make Space sees of the bank.
+- `/makespace tiers`: checks the potion and bandage tiers behind the `Best for you` line against what your game says, and which bandage recipes you know.
 
 ## Compatibility
 
@@ -152,14 +157,14 @@ Troubleshooting:
 ## Development
 
 - Tests: `python3 -I tests/run_tests.py` (needs `lupa`). `node tools/check_globals.js` catches stray globals, and CI runs both.
-- Data: `tools/build_auction_prices.py` (needs `BNET_CLIENT_ID` and `BNET_CLIENT_SECRET`) and `tools/build_reagent_professions.py` regenerate the files in `data/`. `tools/build_weapon_skills.py` builds which classes can use each weapon type (from the game's skill data), and `tools/build_locked_items.py` the list of locked items. Every tool has a `--selftest`. `tools/build_library_books.py` rebuilds the library book list from the quest data, and `tools/build_quest_availability.py --source <foreverQuestDB.lua>` when quests open and which events offer them (use the same Questie export as `build_quest_items.py`).
+- Data: `tools/build_auction_prices.py` (needs `BNET_CLIENT_ID` and `BNET_CLIENT_SECRET`) and `tools/build_reagent_professions.py` regenerate the files in `data/`. `tools/build_weapon_skills.py` builds which classes can use each weapon type (from the game's skill data), and `tools/build_locked_items.py` the list of locked items. Most of them have a `--selftest`, which CI runs. `tools/build_consumable_tiers.py --build <build> --cache-dir tools/source` builds the potion and bandage tiers from the game's own data (it prints every item it used, so odd data shows). `tools/build_library_books.py` rebuilds the library book list from the quest data, and `tools/build_quest_availability.py --source <foreverQuestDB.lua>` when quests open and which events offer them (use the same Questie export as `build_quest_items.py`).
 - `src/verdict.lua` decides, and is pure. It never calls the game. Callers use `Verdict.Judge`, which answers by name; `Evaluate` returns the same values by position.
 - `src/auction.lua` joins the live price, the snapshot and the curves in `src/curves.lua` into one answer per item. A new price rule goes there, a new per-kind setting in `curves.lua`.
 - `src/notes.lua` holds the words behind every yellow. `src/bank.lua` turns a verdict into what the bank shows.
 - `src/safety.lua` holds the protections. A rule can propose a green, and a protection can veto it.
 - `src/scanner.lua` is the only module that reads the game and caches verdicts.
 - `src/overlay.lua` paints dots and glows. `src/tooltip.lua` adds hover text.
-- `src/makeroom.lua` plans which junk to delete for loot. It is pure.
+- `src/makeroom.lua` plans which junk to delete for loot. It is pure. `src/lootbutton.lua` is the delete button under the loot window.
 - `tools/` regenerates the textures. Run `make_dot_textures.py` for the dots and glow and `make_icon.py` for the icon.
 - Release: bump `## Version` in `MakeSpace.toc`, tag, and let the packager build it.
 

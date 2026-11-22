@@ -385,40 +385,16 @@ local function questNameOf(questID)
   return (getQuestTitle and getQuestTitle(questID)) or (info and info[QUEST_INFO_NAME])
 end
 
--- The count goes after the name and is kept when the name is cut, since it is
--- the part you came for.
-local function questRowText(prefix, text, more, suffix)
-  suffix = suffix or ""
-  local room = QUEST_ROW_MAX - #prefix - #suffix
+-- A long quest name is cut so the row stays one short line.
+local function questRowText(prefix, text, more)
+  local room = QUEST_ROW_MAX - #prefix
   if #text > room then text = text:sub(1, room - 3) .. "..." end
-  local row = prefix .. text .. suffix
+  local row = prefix .. text
   if more > 0 then row = row .. " +" .. more end
   return row
 end
 
--- How many of this item a quest in your log asks for, as "(have/need)", the same
--- way the quest tracker shows it. The shipped quest data lists which items a
--- quest wants but not how many, so this is only known for a quest you have taken.
-local function questItemCount(questID, itemName)
-  if not (C_QuestLog and C_QuestLog.GetQuestObjectives) then return nil end
-  local ok, objectives = pcall(C_QuestLog.GetQuestObjectives, questID)
-  if not (ok and type(objectives) == "table") then return nil end
-  local lone, items = nil, 0
-  for _, objective in ipairs(objectives) do
-    if objective.type == "item" and (objective.numRequired or 0) > 0 then
-      items = items + 1
-      lone = objective
-      if itemName and objective.text and objective.text:find(itemName, 1, true) then
-        return objective.numFulfilled or 0, objective.numRequired
-      end
-    end
-  end
-  -- The objective text may word the item differently; one item objective is unambiguous.
-  if items == 1 then return lone.numFulfilled or 0, lone.numRequired end
-  return nil
-end
-
-local function openQuestRow(questIDs, profEntries, itemName)
+local function openQuestRow(questIDs, profEntries)
   local level = UnitLevel and UnitLevel("player") or nil
   local repeatable = MakeSpace.Data.RepeatableQuests
   local open, inLog = {}, {}
@@ -436,8 +412,7 @@ local function openQuestRow(questIDs, profEntries, itemName)
   if #inLog > 0 then
     local name = questNameOf(inLog[1])
     if not name then return nil end
-    local have, need = questItemCount(inLog[1], itemName)
-    return questRowText("In log: ", name, #inLog - 1, need and (" (" .. have .. "/" .. need .. ")") or nil), true
+    return questRowText("In log: ", name, #inLog - 1), true
   end
 
   if #open == 0 or recipeCount(profEntries) >= COMMON_REAGENT_RECIPES then return nil end
@@ -505,6 +480,14 @@ local function renderVerdict(tooltip, verdict, reason, headings, keepWhole, spec
   -- "Worth very little" repeats what the price line right under the heading shows.
   if hasPriceLine and verdict == "green" and reason == MakeSpace.Verdict.WORTH_LITTLE_REASON then return end
 
+  -- A detail of two lines ("Heals 9%...", then "Best for you: ...") is already broken.
+  if reason:find("\n", 1, true) then
+    for part in reason:gmatch("[^\n]+") do
+      addLine(tooltip, part, DETAIL_COLOR.r, DETAIL_COLOR.g, DETAIL_COLOR.b)
+    end
+    return
+  end
+
   -- Break long reasons at the last comma before the wrap threshold so
   -- multi-profession lists don't make the tooltip wider than the item's own.
   if not keepWhole and #reason > VERDICT_LINE_WRAP then
@@ -526,7 +509,7 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
   -- Those don't have GetItem() and have no bag-slot owner, so skip them.
   if not tooltip.GetItem then return end
 
-  local itemName, link = tooltip:GetItem()
+  local _, link = tooltip:GetItem()
   if not link then return end
 
   local itemID = tonumber(link:match("item:(%d+)"))
@@ -623,7 +606,7 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
     -- reason to keep the item are side by side.
     if profEntries and questIDs and not (MakeSpace.Data.VendorReagents
         and MakeSpace.Data.VendorReagents[itemID]) then
-      local row, inLog = openQuestRow(questIDs, profEntries, itemName)
+      local row, inLog = openQuestRow(questIDs, profEntries)
       if row then addQuestRow(tooltip, row, inLog) end
     end
   else
@@ -638,7 +621,7 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
     if profEntries and not isVendorReagent then
       renderProfessionDetails(tooltip, profEntries, itemID)
       local row, inLog
-      if questIDs then row, inLog = openQuestRow(questIDs, profEntries, itemName) end
+      if questIDs then row, inLog = openQuestRow(questIDs, profEntries) end
       if row then addQuestRow(tooltip, row, inLog) end
     elseif questIDs and not isVendorReagent then
       renderQuestDetails(tooltip, questIDs)

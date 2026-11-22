@@ -89,65 +89,27 @@ local function onLootChanged(self, clearedSlot)
   -- and there is no plan to make, so a full scan would only cost time. This is
   -- most loot windows when farming.
   if not (hadLoot or MakeSpace.Scanner.HasLoot()) then return end
-  rescanAll()
-  MakeSpace.Overlay.UpdateLoot()
-  if C_Timer and C_Timer.After then
+  rescanAll() -- repaints the loot window itself while loot remains
+  if not MakeSpace.Scanner.HasLoot() then
+    -- Last item taken: bring the banner and button down, nothing more to lay out.
+    MakeSpace.Overlay.UpdateLoot()
+  elseif C_Timer and C_Timer.After then
     C_Timer.After(0, function() MakeSpace.Overlay.UpdateLoot() end)
   end
 end
 
--- With full bags the dots that matter are in the bags, so open them. If they
--- were closed, close them again when the loot window goes away.
-local openedBagsForLoot = false
--- OpenAllBags is a toggle: a second call closes what the first one opened. A
--- bag addon that replaces the bags is not seen by anyBagOpen, so the check
--- below cannot be trusted to stop a second call. One call per loot window.
-local triedOpeningBags = false
-
--- Is a bag window showing? Checks the frames themselves rather than trusting
--- IsAnyBagOpen alone, which can say yes while nothing is on screen.
-local function anyBagOpen()
-  if ContainerFrameCombinedBags and ContainerFrameCombinedBags:IsShown() then return true end
-  for i = 1, 13 do
-    local frame = _G["ContainerFrame" .. i]
-    if frame and frame:IsShown() then return true end
-  end
-  return false
-end
-
-local function openBagsForLoot()
-  if MakeSpaceDB and MakeSpaceDB.autoOpenBags == false then return end
-  if not MakeSpace.Scanner.MakeRoomSummary().active then return end
-  if triedOpeningBags or anyBagOpen() or not OpenAllBags then return end
-  triedOpeningBags = true
-  if pcall(OpenAllBags) then openedBagsForLoot = true end
-end
-
-local function onLootOpened(self, ...)
-  onLootChanged(self, ...)
-  openBagsForLoot()
-  -- The client can still be settling when the loot window opens (free slots,
-  -- item info), so look once more on the next frame.
-  if C_Timer and C_Timer.After then
-    C_Timer.After(0.1, function()
-      if MakeSpace.Scanner.HasLoot() then openBagsForLoot() end
-    end)
-  end
-end
+-- The bags are never opened from here: with Forever's gamepad UI on, the game
+-- blocks addon code that opens them, and the banner already names what to
+-- delete. The marks show whenever you open your bags yourself.
+local onLootOpened = onLootChanged
 
 local function onLootClosed()
-  triedOpeningBags = false
   local hadLoot = MakeSpace.Scanner.HasLoot()
   MakeSpace.Scanner.ClearLoot()
   -- Only a window that had items left has marks and a plan to take down.
-  if hadLoot then
-    rescanAll()
-    MakeSpace.Overlay.UpdateLoot()
-  end
-  if openedBagsForLoot then
-    openedBagsForLoot = false
-    if CloseAllBags then pcall(CloseAllBags) end
-  end
+  if hadLoot then rescanAll() end
+  -- Always: the banner and the delete button come down with the window.
+  MakeSpace.Overlay.UpdateLoot()
 end
 
 local function onAddonLoaded(self, addonName)
@@ -158,7 +120,7 @@ local function onAddonLoaded(self, addonName)
   MakeSpaceDB = MakeSpaceDB or {}
   MakeSpaceAccountDB = MakeSpaceAccountDB or {}
   MakeSpaceAccountDB.marks = MakeSpaceAccountDB.marks or {}
-  if MakeSpaceDB.autoOpenBags == nil then MakeSpaceDB.autoOpenBags = true end
+  MakeSpaceDB.autoOpenBags = nil -- opening the bags for loot was removed
   MakeSpaceDB.version = MakeSpaceDB.version or 1
 
   self:UnregisterEvent("ADDON_LOADED")
@@ -175,6 +137,9 @@ local function onPlayerLogin(self)
   pcall(self.RegisterEvent, self, "QUEST_REMOVED")
   self:RegisterEvent("SKILL_LINES_CHANGED")
   self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+  -- A learned recipe can change the bandage the hints suggest. Tried safely: it
+  -- only refreshes a hint.
+  pcall(self.RegisterEvent, self, "SPELLS_CHANGED")
   self:RegisterEvent("LOOT_OPENED")
   self:RegisterEvent("LOOT_SLOT_CLEARED")
   self:RegisterEvent("LOOT_CLOSED")
@@ -237,6 +202,9 @@ local EVENT_HANDLERS = {
   QUEST_ACCEPTED         = invalidateAndRescan,
   QUEST_REMOVED          = invalidateAndRescan,
   SKILL_LINES_CHANGED    = invalidateAndRescan,
+  SPELLS_CHANGED         = function(self)
+    if MakeSpace.Scanner.BestBandageChanged() then invalidateAndRescan(self) end
+  end,
   PLAYER_EQUIPMENT_CHANGED = invalidateAndRescan,
   LOOT_OPENED            = onLootOpened,
   LOOT_SLOT_CLEARED      = onLootChanged,

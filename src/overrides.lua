@@ -51,20 +51,6 @@ function MakeSpace.Overrides.Set(itemID, mark, itemName)
     return before ~= mark
 end
 
---- The normal rules again for this item.
--- @return boolean  true if the item had a mark
-function MakeSpace.Overrides.Remove(itemID)
-    return MakeSpace.Overrides.Set(itemID, nil)
-end
-
-function MakeSpace.Overrides.AddKeep(itemID, itemName)
-    MakeSpace.Overrides.Set(itemID, "none", itemName)
-end
-
-function MakeSpace.Overrides.AddFlag(itemID, itemName)
-    MakeSpace.Overrides.Set(itemID, "yellow", itemName)
-end
-
 --- Every marked item as { itemID, mark, name }, for /makespace list.
 function MakeSpace.Overrides.All()
     local list = {}

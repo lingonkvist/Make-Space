@@ -72,5 +72,3 @@ function MakeSpace.Progress.SettlingSet(store, ranks, now)
   return settling
 end
 
---- Forget which professions were counted this session (tests).
-function MakeSpace.Progress.ResetSession() sessionSeen = {} end

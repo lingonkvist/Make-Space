@@ -17,12 +17,12 @@ const LUA = new Set(("assert collectgarbage error getmetatable ipairs loadstring
 
 // What the WoW client (or another addon) provides. Read only.
 const WOW = new Set(("Baganator Bagnon C_AddOns C_Bank C_Container C_Item C_QuestLog C_SkillInfo C_Spell C_Timer " +
-  "BankFrame ChatFontNormal CloseAllBags ContainerFrame1 ContainerFrameCombinedBags CreateFrame EUI_Bags GetCursorPosition InCombatLockdown IsAltKeyDown " +
-  "EllesmereUI Enum GameTooltip GetAddOnMetadata GetBagName GetBuildInfo GetInventoryItemLink " +
-  "GetItemInfo GetSpellInfo GetTime GetItemInfoInstant GetLootSlotInfo GetLootSlotLink GetNumLootItems GetNumSkillLines " +
-  "GetProfessionInfo GetProfessions GetCurrentRegion GetNormalizedRealmName GetRealmName GetServerTime GetSkillLineInfo IsAnyBagOpen " +
+  "BankFrame ChatFontNormal ContainerFrame1 ContainerFrameCombinedBags CreateFrame EUI_Bags GetCursorPosition InCombatLockdown IsAltKeyDown " +
+  "ClearCursor CursorHasItem DeleteCursorItem EllesmereUI Enum GameTooltip GetAddOnMetadata GetBagName GetBuildInfo GetInventoryItemLink " +
+  "GetItemInfo IsPlayerSpell IsSpellKnown GetSpellInfo GetTime GetItemInfoInstant GetLootSlotInfo GetLootSlotLink GetNumLootItems GetNumSkillLines " +
+  "GetProfessionInfo GetProfessions GetCurrentRegion GetNormalizedRealmName GetRealmName GetServerTime GetSkillLineInfo " +
   "ITEM_OPENABLE ITEM_QUALITY_COLORS LOOTFRAME_NUMBUTTONS LootFrame LootSlotHasItem NUM_BAG_SLOTS " +
-  "NUM_CONTAINER_FRAMES NUM_REAGENTBAG_SLOTS OpenAllBags SlashCmdList TooltipDataProcessor UIParent " +
+  "NUM_CONTAINER_FRAMES NUM_REAGENTBAG_SLOTS SlashCmdList TooltipDataProcessor UIParent " +
   "UISpecialFrames UnitClass UnitFactionGroup UnitHealthMax UnitLevel UnitName UnitRace hooksecurefunc time tinsert").split(" "));
 
 // The only globals the addon may create.

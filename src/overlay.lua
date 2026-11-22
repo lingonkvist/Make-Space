@@ -711,32 +711,40 @@ end
 -- One line above the loot window while bags are full: what to do, or why
 -- nothing needs doing.
 local banner
+local BANNER_MAX_WIDTH = 380
 
 local function bannerFrame()
   if banner then return banner end
   if not CreateFrame then return nil end
   banner = CreateFrame("Frame", "MakeSpaceLootBanner", UIParent)
   banner:SetFrameStrata("DIALOG")
-  banner:SetSize(250, 32)
+  banner:SetSize(250, 28)
   local background = banner:CreateTexture(nil, "BACKGROUND")
   background:SetAllPoints(banner)
   background:SetColorTexture(0, 0, 0, 0.8)
   banner.text = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   banner.text:SetPoint("CENTER")
-  banner.text:SetWidth(230)
+  -- Always one line: a long name is cut in the text, and the box grows to fit.
+  banner.text:SetWordWrap(false)
   banner:Hide()
   return banner
 end
 
 function MakeSpace.Overlay.UpdateBanner()
-  local text = MakeSpace.MakeRoom.BannerText(MakeSpace.Scanner.MakeRoomSummary())
+  local summary = MakeSpace.Scanner.MakeRoomSummary()
+  -- With something to delete, the button under the loot window says it, so the
+  -- banner is only for when there is nothing to click.
+  local buttonSaysIt = summary.active and summary.deletes > 0
+      and LootFrame and LootFrame:IsShown()
+  local text = not buttonSaysIt and MakeSpace.MakeRoom.BannerText(summary)
   local frame = text and bannerFrame()
   if not frame then
     if banner then banner:Hide() end
     return
   end
   frame.text:SetText(text)
-  frame:SetHeight((frame.text.GetStringHeight and frame.text:GetStringHeight() or 20) + 16)
+  local textWidth = frame.text.GetStringWidth and frame.text:GetStringWidth() or 200
+  frame:SetWidth(math.min(math.max(textWidth + 24, 160), BANNER_MAX_WIDTH))
   frame:ClearAllPoints()
   if LootFrame and LootFrame:IsShown() then
     frame:SetPoint("BOTTOM", LootFrame, "TOP", 0, 8)
@@ -750,6 +758,7 @@ end
 -- from scratch. Works with the Mainline scroll list and classic loot buttons.
 function MakeSpace.Overlay.UpdateLoot()
   MakeSpace.Overlay.UpdateBanner()
+  if MakeSpace.LootButton then MakeSpace.LootButton.Update() end
   if not LootFrame then return end
 
   if LootFrame.ScrollBox and LootFrame.ScrollBox.ForEachFrame then

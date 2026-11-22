@@ -1,10 +1,11 @@
 -- The entry point's loot handling: a loot window with no items (gold) must not
 -- cost a full bag scan, and one with items must still get one.
 
-local handlers, scans, lootUpdates, hasLoot
+local handlers, scans, lootUpdates, hasLoot, planActive, opened, bagsShown
 
 local function loadEntry()
   scans, lootUpdates, hasLoot = 0, 0, false
+  planActive, opened, bagsShown = false, 0, false
   handlers = nil
   _G.CreateFrame = function()
     return {
@@ -14,7 +15,9 @@ local function loadEntry()
     }
   end
   _G.C_Timer = nil
-  _G.OpenAllBags, _G.CloseAllBags = nil, nil
+  _G.OpenAllBags = function() opened = opened + 1 end
+  _G.CloseAllBags = nil
+  _G.ContainerFrameCombinedBags = { IsShown = function() return bagsShown end }
   _G.MakeSpaceDB = nil
   _G.MakeSpace = {
     Bags = {},
@@ -24,7 +27,7 @@ local function loadEntry()
       HasLoot = function() return hasLoot end,
       RefreshLoot = function() end,
       ClearLoot = function() hasLoot = false end,
-      MakeRoomSummary = function() return { active = false } end,
+      MakeRoomSummary = function() return { active = planActive } end,
     },
     Overlay = {
       UpdateAll = function() end,
@@ -35,7 +38,8 @@ local function loadEntry()
   dofile("MakeSpace.lua")
 end
 
-local function fire(event, ...) handlers(nil, event, ...) end
+local frameStandIn = { RegisterEvent = function() end, UnregisterEvent = function() end }
+local function fire(event, ...) handlers(frameStandIn, event, ...) end
 
 describe("Entry point: loot events", function()
   it("does not scan the bags for a window with no items", function()
@@ -44,7 +48,6 @@ describe("Entry point: loot events", function()
     fire("LOOT_SLOT_CLEARED", 1)
     fire("LOOT_CLOSED")
     assert.are.equal(0, scans)
-    assert.are.equal(0, lootUpdates)
   end)
 
   it("scans when the window opens with items in it", function()
@@ -60,6 +63,22 @@ describe("Entry point: loot events", function()
     _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = false end
     fire("LOOT_SLOT_CLEARED", 1)
     assert.are.equal(1, scans)
+    -- the banner and button come down with one repaint, not several
+    assert.are.equal(1, lootUpdates)
+  end)
+
+  it("repaints the loot window twice while loot remains: now, and after Blizzard lays the rows out", function()
+    loadEntry()
+    local later = {}
+    _G.C_Timer = { After = function(_, fn) later[#later + 1] = fn end }
+    hasLoot = true
+    _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = true end
+    fire("LOOT_SLOT_CLEARED", 1)
+    assert.are.equal(1, lootUpdates)
+    assert.are.equal(1, #later)
+    later[1]()
+    assert.are.equal(2, lootUpdates)
+    _G.C_Timer = nil
   end)
 
   it("scans when the window closes with items left, and not otherwise", function()
@@ -67,8 +86,53 @@ describe("Entry point: loot events", function()
     hasLoot = true
     fire("LOOT_CLOSED")
     assert.are.equal(1, scans)
-    assert.are.equal(1, lootUpdates)
     fire("LOOT_CLOSED")
     assert.are.equal(1, scans)
+  end)
+
+  it("always repaints the loot window parts on close, so the banner and button come down", function()
+    loadEntry()
+    fire("LOOT_CLOSED")
+    fire("LOOT_CLOSED")
+    assert.are.equal(2, lootUpdates)
+  end)
+end)
+
+describe("Entry point: the bags are left alone", function()
+  it("never opens them, even when the make-room plan is active", function()
+    loadEntry()
+    planActive = true
+    _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = true end
+    fire("LOOT_OPENED")
+    fire("LOOT_SLOT_CLEARED", 1)
+    fire("LOOT_CLOSED")
+    assert.are.equal(0, opened)
+  end)
+
+  it("still scans for the plan when the window opens with items", function()
+    loadEntry()
+    planActive = true
+    _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = true end
+    fire("LOOT_OPENED")
+    assert.are.equal(1, scans)
+  end)
+
+  it("drops the old open-the-bags setting from saved variables", function()
+    loadEntry()
+    _G.MakeSpaceDB = { autoOpenBags = true }
+    fire("ADDON_LOADED", "MakeSpace")
+    assert.is_nil(_G.MakeSpaceDB.autoOpenBags)
+  end)
+end)
+
+-- Leave no stand-ins behind for the specs that run after this one.
+describe("Entry point: cleanup", function()
+  it("removes the globals this spec set", function()
+    _G.ContainerFrameCombinedBags = nil
+    _G.OpenAllBags = nil
+    _G.CloseAllBags = nil
+    _G.MakeSpaceDB = nil
+    _G.MakeSpace = nil
+    assert.is_nil(_G.ContainerFrameCombinedBags)
   end)
 end)

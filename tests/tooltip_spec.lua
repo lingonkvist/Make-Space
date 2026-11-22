@@ -122,6 +122,24 @@ describe("tooltip basic output", function()
     assert.are.equal(0.79, tt.lines[1].g)
   end)
 
+  it("a detail of two lines is shown as two lines", function()
+    MakeSpace.Data.ReagentProfessions = {}
+    MakeSpace.Scanner = {
+      GetResult = function()
+        return { verdict = "yellow", reason = "Weak bandage",
+                 heading = { title = "Weak bandage (heals 6%)",
+                             detail = "Heals 6% of your health\nBest for you: Silk Bandage" } }
+      end,
+    }
+    local tt = makeTooltip("|cff...|Hitem:2581:...|h[Heavy Linen Bandage]|h|r", "ContainerFrame1", 0, 5)
+    MakeSpace.Tooltip.OnTooltipSetItem(tt)
+
+    assert.are.equal(3, #tt.lines)
+    assert.are.equal("Heals 6% of your health", tt.lines[2].text)
+    assert.are.equal("Best for you: Silk Bandage", tt.lines[3].text)
+    assert.are.equal(tt.lines[2].g, tt.lines[3].g)
+  end)
+
   it("header: dot and verdict in words in the verdict color, detail in info blue", function()
     MakeSpace.Data.ReagentProfessions = {}
     MakeSpace.Scanner = {
@@ -209,7 +227,7 @@ describe("tooltip basic output", function()
     MakeSpace.Scanner = {
       GetResult = function()
         return { verdict = "yellow", reason = "Cheapest junk, sells for 5c",
-                 detail = "Delete to make room for your loot" }
+                 detail = "Delete to make room for loot" }
       end,
     }
 
@@ -220,7 +238,7 @@ describe("tooltip basic output", function()
 
     assert.are.equal(2, #tt.lines)
     assert.is_truthy(plainCoins(tt.lines[1].text):find("Cheapest junk, sells for 5c$"))
-    assert.are.equal("Delete to make room for your loot", tt.lines[2].text)
+    assert.are.equal("Delete to make room for loot", tt.lines[2].text)
     assert.are.equal(0.40, tt.lines[2].r)
   end)
 
@@ -901,64 +919,16 @@ describe("tooltip: a reagent that a quest wants", function()
     assert.are.equal("In log: Test Quest 302", tt.lines[#tt.lines].text)
   end)
 
-  it("says how many the quest in your log wants, as have/need like the tracker", function()
-    setup({ verdict = nil, reason = nil }, 12)
-    _G.C_QuestLog.IsOnQuest = function(id) return id == 302 end
-    _G.C_QuestLog.GetQuestObjectives = function()
-      return {
-        { type = "monster", text = "Troll slain: 3/5", numFulfilled = 3, numRequired = 5 },
-        { type = "item", text = "ItemName: 7/20", numFulfilled = 7, numRequired = 20 },
-      }
-    end
-    local tt = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
-    MakeSpace.Tooltip.OnTooltipSetItem(tt)
-    _G.C_QuestLog.IsOnQuest = nil
-    _G.C_QuestLog.GetQuestObjectives = nil
-
-    assert.are.equal("In log: Test Quest 302 (7/20)", tt.lines[#tt.lines].text)
-  end)
-
-  it("picks the right item objective by name when a quest wants several", function()
-    setup({ verdict = nil, reason = nil }, 12)
-    _G.C_QuestLog.IsOnQuest = function(id) return id == 302 end
-    _G.C_QuestLog.GetQuestObjectives = function()
-      return {
-        { type = "item", text = "Other Thing: 1/4", numFulfilled = 1, numRequired = 4 },
-        { type = "item", text = "ItemName: 2/10", numFulfilled = 2, numRequired = 10 },
-      }
-    end
-    local tt = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
-    MakeSpace.Tooltip.OnTooltipSetItem(tt)
-    assert.are.equal("In log: Test Quest 302 (2/10)", tt.lines[#tt.lines].text)
-
-    -- two item objectives and no name match: no guess
-    _G.C_QuestLog.GetQuestObjectives = function()
-      return {
-        { type = "item", text = "A: 1/4", numFulfilled = 1, numRequired = 4 },
-        { type = "item", text = "B: 2/10", numFulfilled = 2, numRequired = 10 },
-      }
-    end
-    local second = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
-    MakeSpace.Tooltip.OnTooltipSetItem(second)
-    _G.C_QuestLog.IsOnQuest = nil
-    _G.C_QuestLog.GetQuestObjectives = nil
-    assert.are.equal("In log: Test Quest 302", second.lines[#second.lines].text)
-  end)
-
-  it("keeps the count when a long quest name is cut", function()
+  it("cuts a long quest name so the row stays short", function()
     setup({ verdict = nil, reason = nil }, 12)
     MakeSpace.Data.QuestItems = { [3470] = { 399 } }
     _G.C_QuestLog.IsOnQuest = function(id) return id == 399 end
-    _G.C_QuestLog.GetQuestObjectives = function()
-      return { { type = "item", text = "ItemName: 12/20", numFulfilled = 12, numRequired = 20 } }
-    end
     local tt = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
     MakeSpace.Tooltip.OnTooltipSetItem(tt)
     _G.C_QuestLog.IsOnQuest = nil
-    _G.C_QuestLog.GetQuestObjectives = nil
     local row = tt.lines[#tt.lines].text
     assert.are.equal(46, #row)
-    assert.is_truthy(row:find("%.%.%. %(12/20%)$"))
+    assert.is_truthy(row:find("%.%.%.$"))
   end)
 
   it("counts the other quests in your log", function()

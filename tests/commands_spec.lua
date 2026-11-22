@@ -9,6 +9,62 @@ dofile("src/curves.lua")
 dofile("src/auction.lua")
 dofile("src/commands.lua")
 
+describe("Commands.TierLines", function()
+  local saved
+  local function lines(api)
+    return table.concat(MakeSpace.Commands.TierLines(api), "\n")
+  end
+
+  it("checks every item against what the game says", function()
+    saved = MakeSpace.Data and MakeSpace.Data.ConsumableTiers
+    MakeSpace.Data = MakeSpace.Data or {}
+    dofile("data/consumable_tiers.lua")
+    local info = {
+      [3928] = { "Superior Healing Potion", 35, 0 },
+      [13446] = { "Major Healing Potion", 50, 0 },     -- needs more than the table says
+      [1710] = { "Greater Healing Potion", 21, 1 },    -- binds when picked up
+      [929] = { "Healing Pot", 12, 0 },                -- called something else
+    }
+    local text = lines({
+      itemInfo = function(id) local row = info[id]; if row then return row[1], row[2], row[3] end end,
+      isKnown = function(spell) return false end,
+    })
+    assert.is_truthy(text:find("Superior Healing Potion (level 35): 3928 ok", 1, true))
+    assert.is_truthy(text:find("13446 needs level 50", 1, true))
+    assert.is_truthy(text:find("1710 binds when picked up", 1, true))
+    assert.is_truthy(text:find('929 is called "Healing Pot"', 1, true))
+    assert.is_truthy(text:find("118 not loaded yet", 1, true))
+    assert.is_truthy(text:find("Run this again in a moment", 1, true))
+  end)
+
+  it("says which bandage recipes you know and which is the best", function()
+    local recipe, id
+    for _, bandage in ipairs(MakeSpace.Data.ConsumableTiers.bandages) do
+      if bandage.name == "Wool Bandage" then recipe, id = bandage.recipe, bandage.id end
+    end
+    local text = lines({
+      itemInfo = function() end,
+      isKnown = function(spell) return spell == recipe end,
+      bestBandageID = id,
+    })
+    assert.is_truthy(text:find("Wool Bandage (" .. id .. "), recipe " .. recipe .. ": known", 1, true))
+    assert.is_truthy(text:find("Linen Bandage", 1, true))
+    assert.is_truthy(text:find(": not known", 1, true))
+    assert.is_truthy(text:find("Best bandage you can make: Wool Bandage", 1, true))
+  end)
+
+  it("cannot check recipes when the game has no such call, and has none then", function()
+    local text = lines({ itemInfo = function() end })
+    assert.is_truthy(text:find(": cannot check", 1, true))
+    assert.is_truthy(text:find("Best bandage you can make: none", 1, true))
+    MakeSpace.Data.ConsumableTiers = saved
+  end)
+
+  it("has nothing to say without tier data", function()
+    assert.are.equal("No tier data is loaded.", lines({ itemInfo = function() end }))
+  end)
+end)
+
 describe("Commands.ParseItemID", function()
   it("reads the ID out of a shift-clicked item link", function()
     local link = "|cff1eff00|Hitem:2589::::::::60:::::|h[Linen Cloth]|h|r"
@@ -52,14 +108,6 @@ describe("Item marks", function()
     assert.are.equal("Thing", MakeSpaceAccountDB.marks[100].name) -- the name stays
   end)
 
-  it("keep and flag are the old names for the none and yellow marks", function()
-    MakeSpace.Overrides.AddKeep(101, "A")
-    MakeSpace.Overrides.AddFlag(102, "B")
-
-    assert.are.equal("none", MakeSpace.Overrides.Get(101))
-    assert.are.equal("yellow", MakeSpace.Overrides.Get(102))
-  end)
-
   it("default or nil goes back to the normal rules, and says whether anything changed", function()
     MakeSpace.Overrides.Set(200, "none", "Thing")
 
@@ -67,8 +115,8 @@ describe("Item marks", function()
     assert.are.equal(false, MakeSpace.Overrides.Set(200, nil))
     assert.is_nil(MakeSpace.Overrides.Get(200))
     assert.are.equal(true, MakeSpace.Overrides.Set(201, "green"))
-    assert.are.equal(true, MakeSpace.Overrides.Remove(201))
-    assert.are.equal(false, MakeSpace.Overrides.Remove(201))
+    assert.are.equal(true, MakeSpace.Overrides.Set(201, nil))
+    assert.are.equal(false, MakeSpace.Overrides.Set(201, nil))
   end)
 
   it("an unknown mark is refused", function()

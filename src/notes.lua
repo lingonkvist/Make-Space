@@ -82,16 +82,20 @@ local NOTES = {
   end,
   no_mana = function(who)
     -- The item's own name says "Mana", so the heading only has to say it is no use to you.
-    return who .. " have no mana. May sell at the auction house", "Useless to " .. who, nil
+    return who .. " have no mana", "Useless to " .. who, nil
   end,
-  low_level_consumable = function(noun, level, you)
-    -- No detail line: the item's own tooltip says its level and you know yours.
+  no_use_stat = function(who, stat)
+    return who .. " get nothing from " .. stat, "Useless to " .. who, nil
+  end,
+  low_level_consumable = function(noun, level, you, better)
+    -- The detail is only the better one to use, when there is one: the item's own
+    -- tooltip says its level and you know yours.
     return "Low-level " .. noun .. " (level " .. level .. ", you are " .. you .. ")",
-        "Low-level " .. noun, nil
+        "Low-level " .. noun, better and ("Best for you: " .. better) or nil
   end,
-  weak_bandage = function(heal, percent, health)
-    return "Weak bandage", "Weak bandage",
-        "Heals " .. percent .. "% of your health (" .. heal .. " of " .. health .. ")"
+  weak_bandage = function(percent, better)
+    local title = "Weak bandage (heals " .. percent .. "%)"
+    return title, title, better and ("Best for you: " .. better) or nil
   end,
   wrong_class_reagent = function(whole)
     return whole, "Wrong class reagent", whole

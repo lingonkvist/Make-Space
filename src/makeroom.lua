@@ -126,7 +126,7 @@ function MakeSpace.MakeRoom.MarkedResult(existing, value)
     result.verdict = "yellow"
     result.reason = "Cheapest junk, sells for " .. MakeSpace.Verdict.FormatMoney(value)
   end
-  result.detail = "Delete to make room for your loot"
+  result.detail = "Delete to make room for loot"
   result.glow = true -- the overlay draws a green border glow
   return result
 end
@@ -150,6 +150,15 @@ function MakeSpace.MakeRoom.RestoreResult(result)
   return restored
 end
 
+-- Long names are cut so the banner and the delete button stay on one line.
+local NAME_MAX = 22
+local function shortName(name, max)
+  max = max or NAME_MAX
+  if #name <= max then return name end
+  return name:sub(1, max - 3) .. "..."
+end
+MakeSpace.MakeRoom.ShortName = shortName
+
 --- The one-line explanation shown while a make-room plan is active.
 -- @param summary table  Scanner.MakeRoomSummary()
 -- @return string|nil  nil when the bags have room and there is nothing to say
@@ -160,7 +169,7 @@ function MakeSpace.MakeRoom.BannerText(summary)
     if #names == 0 then
       return "Bags full: delete the glowing " .. (summary.deletes == 1 and "item" or "items")
     end
-    local text = "Bags full: consider deleting " .. names[1]
+    local text = "Bags full: consider deleting " .. shortName(names[1])
     if #names > 1 then text = text .. " and " .. (#names - 1) .. " more" end
     return text
   end

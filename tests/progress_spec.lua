@@ -3,6 +3,11 @@ _G.MakeSpace = nil
 dofile("src/progress.lua")
 
 local P = MakeSpace.Progress
+-- A fresh module is a fresh play session: nothing counted yet.
+local function newSession()
+  dofile("src/progress.lua")
+  P = MakeSpace.Progress
+end
 local DAY = 86400
 local HOUR = 3600
 
@@ -10,7 +15,7 @@ describe("Progress", function()
   local store
 
   local function session(now, ranks)
-    P.ResetSession()
+    newSession()
     P.Observe(store, ranks, now)
     return P.IdleSet(store, ranks, now)
   end
@@ -29,7 +34,7 @@ describe("Progress", function()
   it("is settling after 7 hours and idle only after 12", function()
     store = {}
     session(0, { Alchemy = 100 })
-    P.ResetSession()
+    newSession()
     P.Observe(store, { Alchemy = 100 }, 7 * HOUR)
     assert.is_truthy(P.SettlingSet(store, { Alchemy = 100 }, 7 * HOUR).Alchemy)
     assert.is_nil(P.IdleSet(store, { Alchemy = 100 }, 7 * HOUR).Alchemy)
@@ -66,7 +71,7 @@ describe("Progress", function()
   it("counts a session once, however often it is scanned", function()
     store = {}
     session(0, { Alchemy = 100 })
-    P.ResetSession()
+    newSession()
     for i = 1, 10 do P.Observe(store, { Alchemy = 100 }, DAY + i) end
     assert.are.equal(1, store.Alchemy.quiet)
   end)

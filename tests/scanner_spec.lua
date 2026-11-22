@@ -27,6 +27,10 @@ local ITEMS = {
   [800] = { "Recipe: Fancy Elixir", 1, 1, 0, 1, "", 100, 9, 6 },
   [1100] = { "Healing Draught", 1, 1, 1, 5, "", 10, 0, 1 }, -- potion
   [1101] = { "Test Bandage", 1, 1, 1, 1, "", 10, 0, 7 },     -- bandage
+  [1200] = { "Spiced Bread", 1, 1, 35, 20, "", 8, 0, 5 },    -- food, level 35
+  [1201] = { "Hearty Stew", 1, 1, 45, 20, "", 12, 0, 5 },    -- food, level 45
+  [1202] = { "Fancy Stew", 1, 1, 52, 20, "", 20, 0, 5 },     -- food, level 52
+  [1203] = { "Honey Bread", 1, 1, 35, 20, "", 20, 0, 5 },    -- food, level 35, worth more than 1200
   [1003] = { "Spent Token", 1, 1, 0, 1, "", 5, 12, 0 },   -- quest item, 5c
   [1004] = { "Gray Totem", 0, 1, 0, 1, "", 5, 15, 0 },    -- gray, 5c
   [1001] = { "Strange Mineral", 1, 1, 0, 20, "", 0, 7, 7 }, -- white, no vendor price
@@ -135,6 +139,27 @@ describe("Scanner: make room", function()
     assert.are.equal(true, MakeSpace.Scanner.MakeRoomSummary().active)
   end)
 
+  it("lists the bag items the plan would delete, for the loot window button", function()
+    setUp({ [0] = { { id = 100, count = 20 }, { id = 300 }, { id = 400 } } },
+      { [0] = 0 }, { { id = 100, qty = 3 } })
+    MakeSpace.Scanner.RefreshLoot()
+    MakeSpace.Scanner.ScanAll()
+    local planned = MakeSpace.Scanner.PlannedDeletes()
+    assert.are.equal(MakeSpace.Scanner.MakeRoomSummary().deletes, #planned)
+    assert.are.equal(1, #planned)
+    assert.are.equal(0, planned[1].bag)
+    assert.are.equal(2, planned[1].slot) -- the Torn Rag, the cheapest junk
+    assert.are.equal(1, planned[1].count)
+    assert.is_truthy(planned[1].itemID)
+  end)
+
+  it("lists nothing when the bags have room", function()
+    setUp({ [0] = { { id = 300 } } }, { [0] = 3 }, { { id = 500, qty = 1 } })
+    MakeSpace.Scanner.RefreshLoot()
+    MakeSpace.Scanner.ScanAll()
+    assert.are.equal(0, #MakeSpace.Scanner.PlannedDeletes())
+  end)
+
   it("knows whether a loot window has anything in it", function()
     setUp({ [0] = { { id = 300 } } }, { [0] = 0 }, { { id = 500, qty = 1 } })
     MakeSpace.Scanner.RefreshLoot()
@@ -189,6 +214,82 @@ describe("Scanner: reagents in the loot window", function()
 
   it("still takes a reagent with no price, since a price cannot judge it", function()
     assert.are.equal("consider", lootDecisionFor(1001, 50))
+  end)
+end)
+
+describe("Scanner: auction value when making room", function()
+  -- price[id] = { copper, steady }: what Auctionator would report for that item.
+  local function decisionWith(prices, junkID, lootID)
+    setUp({ [0] = { { id = junkID } } }, { [0] = 0 }, { { id = lootID, qty = 1 } })
+    local real = MakeSpace.Live.FreshPrice
+    MakeSpace.Live.FreshPrice = function(item)
+      local p = prices[item.id]
+      if not p then return nil end
+      return p[1], 0, p[2]
+    end
+    MakeSpace.Scanner.RefreshLoot()
+    MakeSpace.Scanner.ScanAll()
+    MakeSpace.Live.FreshPrice = real
+    return MakeSpace.Scanner.LootDecision(1)
+  end
+
+  it("by vendor price alone, a 50c loot beats a 2c junk and loses to an 8s one", function()
+    assert.are.equal("take", decisionWith({}, 300, 500))
+    assert.are.equal("leave", decisionWith({}, 700, 500))
+  end)
+
+  it("takes loot over junk when the loot has a steady auction price above it", function()
+    assert.are.equal("take", decisionWith({ [500] = { 5000, true } }, 700, 500))
+  end)
+
+  it("ignores an auction price that has not held steady", function()
+    assert.are.equal("leave", decisionWith({ [500] = { 5000, false } }, 700, 500))
+  end)
+
+  it("keeps junk that sells well at auction, so the loot is left", function()
+    assert.are.equal("leave", decisionWith({ [300] = { 1000, true } }, 300, 500))
+  end)
+
+  it("a junk item with only an unsteady auction price is still the cheapest", function()
+    assert.are.equal("take", decisionWith({ [300] = { 1000, false } }, 300, 500))
+  end)
+end)
+
+describe("Scanner: food that is spare because you carry better", function()
+  local function foodResult(ids, slot)
+    local cells = {}
+    for _, id in ipairs(ids) do cells[#cells + 1] = { id = id } end
+    setUp({ [0] = cells }, { [0] = 0 })
+    _G.UnitLevel = function() return 48 end
+    _G.UIParent = {}
+    _G.MakeSpaceSkillTipTextLeft2 = { GetText = function() return "Restores 1000 health over 30 sec. Must remain seated." end }
+    _G.CreateFrame = function()
+      return { SetOwner = function() end, ClearLines = function() end,
+               SetBagItem = function() end, NumLines = function() return 2 end }
+    end
+    MakeSpace.Scanner.ScanAll()
+    return MakeSpace.Scanner.GetResult(0, slot or 1)
+  end
+
+  it("a level 35 food at level 48 waits when it is the best you carry (13 levels is under 15)", function()
+    assert.is_nil(foodResult({ 1200 }).verdict)
+  end)
+
+  it("is flagged at once when a level 45 food you can use is in the same bags", function()
+    local result = foodResult({ 1200, 1201 })
+    assert.are.equal("yellow", result.verdict)
+    assert.are.equal("Low-level food (level 35, you are 48)", result.reason)
+  end)
+
+  it("of two foods at the same level, flags the one whose stack is worth less", function()
+    assert.are.equal("yellow", foodResult({ 1200, 1203 }, 1).verdict) -- 8c against 20c
+    assert.is_nil(foodResult({ 1200, 1203 }, 2).verdict)
+    assert.is_nil(foodResult({ 1203, 1200 }, 1).verdict)
+    assert.are.equal("yellow", foodResult({ 1203, 1200 }, 2).verdict)
+  end)
+
+  it("is not flagged by a better food you cannot use yet", function()
+    assert.is_nil(foodResult({ 1200, 1202 }).verdict)
   end)
 end)
 
@@ -312,7 +413,7 @@ describe("Scanner: recipes", function()
   it("banks a recipe one point out of reach once the profession has gone idle", function()
     local saved = _G.MakeSpaceDB
     _G.MakeSpaceDB = { skillProgress = { ["?-?"] = { Alchemy = { rank = 100, quiet = 1, seen = 0, gained = 0 } } } }
-    MakeSpace.Progress.ResetSession()
+    dofile("src/progress.lua") -- a fresh play session
     setUp({ [0] = { { id = 800 } } }, { [0] = 0 })
     giveSkills({ { "Alchemy", 100 } })
     giveTooltip("Requires Alchemy (101)")
@@ -329,7 +430,7 @@ describe("Scanner: recipes", function()
       Alchemy = { rank = 100, quiet = 1, seen = 0, gained = 0 },
       Tailoring = { rank = 50, quiet = 1, seen = 0, gained = 0 },
     } } }
-    MakeSpace.Progress.ResetSession()
+    dofile("src/progress.lua") -- a fresh play session
     setUp({ [0] = {} }, { [0] = 0 })
     giveSkills({ { "Alchemy", 100 } })
     MakeSpace.Scanner.ScanAll()
@@ -666,12 +767,57 @@ describe("Scanner: bandages by what they heal", function()
   it("reads the heal amount and flags a weak bandage", function()
     local result = resultFor("Use: Heals 400 damage over 8 sec. Must remain stationary while channeling.", 4500)
     assert.are.equal("yellow", result.verdict)
-    assert.are.equal("Weak bandage", result.reason)
+    assert.are.equal("Weak bandage (heals 9%)", result.reason)
   end)
 
   it("reads a heal amount with a thousands separator", function()
     local result = resultFor("Use: Heals 1,104 damage over 8 sec.", 4500)
     assert.is_nil(result.verdict)
+  end)
+end)
+
+
+describe("Scanner: the best bandage you can make", function()
+  local saved
+  local known = {}
+
+  local function recipeOf(name)
+    for _, bandage in ipairs(MakeSpace.Data.ConsumableTiers.bandages) do
+      if bandage.name == name then return bandage.recipe, bandage.id end
+    end
+  end
+
+  it("is the strongest bandage whose recipe the game says you know", function()
+    saved = MakeSpace.Data.ConsumableTiers
+    dofile("data/consumable_tiers.lua")
+    local woolRecipe, woolID = recipeOf("Wool Bandage")
+    local linenRecipe = recipeOf("Linen Bandage")
+    local silkRecipe, silkID = recipeOf("Silk Bandage")
+    _G.IsPlayerSpell = function(spell) return known[spell] == true end
+
+    known = {}
+    assert.is_nil(MakeSpace.Scanner.BestBandageID())
+    known = { [linenRecipe] = true, [woolRecipe] = true }
+    assert.are.equal(woolID, MakeSpace.Scanner.BestBandageID())
+    known[silkRecipe] = true
+    assert.are.equal(silkID, MakeSpace.Scanner.BestBandageID())
+  end)
+
+  it("says when it changes, once", function()
+    local heavyRecipe = recipeOf("Heavy Wool Bandage")
+    known = {}
+    MakeSpace.Scanner.BestBandageChanged()
+    assert.are.equal(false, MakeSpace.Scanner.BestBandageChanged())
+    known[heavyRecipe] = true
+    assert.are.equal(true, MakeSpace.Scanner.BestBandageChanged())
+    assert.are.equal(false, MakeSpace.Scanner.BestBandageChanged())
+  end)
+
+  it("is nobody's suggestion when the game cannot say", function()
+    _G.IsPlayerSpell = nil
+    _G.IsSpellKnown = nil
+    assert.is_nil(MakeSpace.Scanner.BestBandageID())
+    MakeSpace.Data.ConsumableTiers = saved
   end)
 end)
 
@@ -692,6 +838,7 @@ describe("Scanner: tooltip reads are kept", function()
   local tipReads, firstLine
 
   local function giveCountingTooltip(text)
+    MakeSpace.Scanner.ClearTooltipCache()
     tipReads = 0
     firstLine = nil
     _G.ITEM_MIN_SKILL = "Requires %s (%d)"
@@ -759,7 +906,18 @@ describe("Scanner: tooltip reads are kept", function()
     assert.are.equal(3, tipReads)
   end)
 
-  it("reads again after the cache is cleared", function()
+  it("reads again after the tooltip cache is cleared", function()
+    setUp({ [0] = { { id = 800 } } }, { [0] = 0 })
+    withLinks()
+    giveCountingTooltip("Requires Alchemy (225)")
+    firstLine = "Recipe: Something"
+    MakeSpace.Scanner.ScanAll()
+    MakeSpace.Scanner.ClearTooltipCache()
+    MakeSpace.Scanner.ScanAll()
+    assert.are.equal(2, tipReads)
+  end)
+
+  it("keeps the tooltip reads when quests, skills or gear change the verdicts", function()
     setUp({ [0] = { { id = 800 } } }, { [0] = 0 })
     withLinks()
     giveCountingTooltip("Requires Alchemy (225)")
@@ -767,7 +925,7 @@ describe("Scanner: tooltip reads are kept", function()
     MakeSpace.Scanner.ScanAll()
     MakeSpace.Scanner.ClearCache()
     MakeSpace.Scanner.ScanAll()
-    assert.are.equal(2, tipReads)
+    assert.are.equal(1, tipReads)
   end)
 
   it("keeps separate answers for two different items", function()

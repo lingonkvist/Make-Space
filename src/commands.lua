@@ -176,6 +176,61 @@ function MakeSpace.Commands.PrintSummary()
   end
 end
 
+--- What the game says about every item in the potion and bandage tables, one
+-- line per tier, so the tables can be checked against the real client.
+-- @param api table  { itemInfo(id) -> name, minLevel, bindType (nil until the
+--                   game has the item), isKnown(spellID) -> boolean|nil,
+--                   bestBandageID }
+-- @return table list of strings
+function MakeSpace.Commands.TierLines(api)
+  local data = MakeSpace.Data and MakeSpace.Data.ConsumableTiers
+  if not data then return { "No tier data is loaded." } end
+  local lines, notLoaded = {}, 0
+  for _, key in ipairs({ "health", "mana" }) do
+    lines[#lines + 1] = (key == "health" and "Healing" or "Mana") .. " potions:"
+    for _, tier in ipairs(data.potions[key] or {}) do
+      local notes = {}
+      for _, id in ipairs(tier.ids) do
+        local name, level, bind = api.itemInfo(id)
+        if not name then
+          notLoaded = notLoaded + 1
+          notes[#notes + 1] = id .. " not loaded yet"
+        else
+          local problems = {}
+          if name ~= tier.name then problems[#problems + 1] = 'is called "' .. name .. '"' end
+          if level and level > tier.level then problems[#problems + 1] = "needs level " .. level end
+          if bind == 1 then problems[#problems + 1] = "binds when picked up" end
+          notes[#notes + 1] = id .. (#problems == 0 and " ok" or (" " .. table.concat(problems, ", ")))
+        end
+      end
+      lines[#lines + 1] = "  " .. tier.name .. " (level " .. tier.level .. "): " .. table.concat(notes, "; ")
+    end
+  end
+  lines[#lines + 1] = "Bandages, and whether you have learned the recipe:"
+  for _, bandage in ipairs(data.bandages or {}) do
+    local known = api.isKnown and api.isKnown(bandage.recipe)
+    local answer = api.isKnown == nil and "cannot check" or (known and "known" or "not known")
+    lines[#lines + 1] = "  " .. bandage.name .. " (" .. bandage.id .. "), recipe " .. bandage.recipe .. ": " .. answer
+  end
+  local best = "none"
+  for _, bandage in ipairs(data.bandages or {}) do
+    if bandage.id == api.bestBandageID then best = bandage.name end
+  end
+  lines[#lines + 1] = "Best bandage you can make: " .. best
+  if notLoaded > 0 then
+    lines[#lines + 1] = notLoaded .. " items were not loaded yet. Run this again in a moment."
+  end
+  return lines
+end
+
+local function itemFacts(itemID)
+  local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+  if not getInfo then return nil end
+  local first, _, _, _, minLevel, _, _, _, _, _, _, _, _, bindType = getInfo(itemID)
+  if type(first) == "table" then return first.itemName, first.itemMinLevel, first.bindType end
+  return first, minLevel, bindType
+end
+
 local COMMAND_HANDLERS = {
   help = function()
     say("commands:")
@@ -186,7 +241,6 @@ local COMMAND_HANDLERS = {
     print("  /makespace reset [item]   - Same as mark default")
     print("  /makespace list           - Show your marked items")
     print("  Alt-right-click an item in your bags to set its dot from a menu.")
-    print("  /makespace autoopen       - Turn on or off opening your bags when loot needs room")
     print("  /makespace pulse          - Turn on or off the swell on sellable greens at a vendor")
     print("  /makespace summary        - What the dots in your bags add up to")
     print("  /makespace help           - Show this message")
@@ -198,9 +252,19 @@ local COMMAND_HANDLERS = {
     print("  /makespace glow           - Test the delete glow on your first item")
     print("  /makespace status         - Version, bag UI and counts")
     print("  /makespace bank           - What Make Space sees of the bank")
+    print("  /makespace tiers          - Check the potion and bandage tiers against your game")
   end,
   summary = function()
     MakeSpace.Commands.PrintSummary()
+  end,
+  tiers = function()
+    say("potion and bandage tiers (" .. (gameBuild() or "unknown build") .. ", level " .. tostring(UnitLevel and UnitLevel("player")) .. "):")
+    local known = IsPlayerSpell or IsSpellKnown
+    for _, line in ipairs(MakeSpace.Commands.TierLines({
+      itemInfo = itemFacts,
+      isKnown = known,
+      bestBandageID = MakeSpace.Scanner.BestBandageID(),
+    })) do print("  " .. line) end
   end,
   bank = function()
     say("bank:")
@@ -327,18 +391,6 @@ local COMMAND_HANDLERS = {
     if explained.professionsKnown == false then
       print("  Your professions could not be fully read (Skills tab collapsed or not loaded), so profession-based greens are held back.")
     end
-  end,
-  autoopen = function(argument)
-    MakeSpaceDB = MakeSpaceDB or {}
-    local word = (argument or ""):lower():match("^%s*(%a*)")
-    if word == "on" then
-      MakeSpaceDB.autoOpenBags = true
-    elseif word == "off" then
-      MakeSpaceDB.autoOpenBags = false
-    else
-      MakeSpaceDB.autoOpenBags = MakeSpaceDB.autoOpenBags == false
-    end
-    say("Opening your bags when loot needs room: " .. (MakeSpaceDB.autoOpenBags and "on" or "off"))
   end,
   pulse = function(argument)
     MakeSpaceDB = MakeSpaceDB or {}

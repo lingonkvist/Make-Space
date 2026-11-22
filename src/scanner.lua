@@ -162,6 +162,36 @@ function MakeSpace.Scanner.QuestAudience()
            skillLines = MakeSpace.Scanner.professionSkillLines }
 end
 
+-- The strongest bandage whose First Aid recipe you have learned, as an item ID.
+-- Asking the game whether the recipe spell is known is the only reliable answer:
+-- the skill level says what you could learn, not what you did (Heavy Silk,
+-- Mageweave and Dense Runecloth are bought as manuals).
+local function findBestBandage()
+  local known = IsPlayerSpell or IsSpellKnown
+  local data = MakeSpace.Data and MakeSpace.Data.ConsumableTiers
+  if not (known and data and data.bandages) then return nil end
+  for index = #data.bandages, 1, -1 do
+    local bandage = data.bandages[index]
+    if known(bandage.recipe) then return bandage.id end
+  end
+  return nil
+end
+local lastBestBandage
+
+--- The strongest bandage you can make now, as an item ID (nil when none).
+function MakeSpace.Scanner.BestBandageID()
+  return findBestBandage()
+end
+
+--- Whether the best bandage you can make is not the one last seen, so a learned
+-- recipe refreshes the hints. Called when your spells change.
+function MakeSpace.Scanner.BestBandageChanged()
+  local now = findBestBandage()
+  local changed = now ~= lastBestBandage
+  lastBestBandage = now
+  return changed
+end
+
 local function getPlayerState()
   local class, playerClass = UnitClass("player")
   local race, raceFile = UnitRace("player")
@@ -203,6 +233,9 @@ local function getPlayerState()
   -- For the quest filter: only trusted when the whole profession list was read.
   MakeSpace.Scanner.professionSkillLines = professionsKnown and skillLines or nil
 
+  local bestBandageID = findBestBandage()
+  lastBestBandage = bestBandageID
+
   return {
     class = class,
     playerClass = playerClass,
@@ -220,6 +253,7 @@ local function getPlayerState()
     professionSettling = professionSettling,
     professionsKnown = professionsKnown,
     professionSource = professionSource,
+    bestBandageID = bestBandageID,
   }
 end
 
@@ -441,27 +475,38 @@ local function requiredSkillPattern()
   return skillPattern
 end
 
-local function readRequiredSkill(bag, slot)
-  local pattern = requiredSkillPattern()
-  if not (pattern and CreateFrame and UIParent) then return nil end
+--- Fill the one shared tooltip with a bag item and hand each line's text to
+-- visit(content), from line `first` (line 1 is the item's name). The visitor
+-- stops the walk by returning true. A line with no text is skipped, or given as
+-- `blank` when that is set.
+-- @return boolean  false when there is no tooltip to read (outside the game)
+local function eachTooltipLine(bag, slot, first, visit, blank)
+  if not (CreateFrame and UIParent) then return false end
   if not skillTip then
     skillTip = CreateFrame("GameTooltip", "MakeSpaceSkillTip", nil, "GameTooltipTemplate")
   end
   skillTip:SetOwner(UIParent, "ANCHOR_NONE")
   skillTip:ClearLines()
   skillTip:SetBagItem(bag, slot)
+  for line = first, skillTip:NumLines() do
+    local text = _G["MakeSpaceSkillTipTextLeft" .. line]
+    local content = text and text:GetText() or blank
+    if content and visit(content) then break end
+  end
+  return true
+end
+
+local function readRequiredSkill(bag, slot)
+  local pattern = requiredSkillPattern()
+  if not pattern then return nil end
   -- A recipe's tooltip can embed a preview of the item it makes, with that
   -- item's own "Requires First Aid (150)". The recipe's own line comes last, so
   -- the last match is the one that gates learning it.
   local found
-  for line = 2, skillTip:NumLines() do
-    local text = _G["MakeSpaceSkillTipTextLeft" .. line]
-    local content = text and text:GetText()
-    if content then
-      local _, number = content:match(pattern)
-      if number then found = tonumber(number) end
-    end
-  end
+  eachTooltipLine(bag, slot, 2, function(content)
+    local _, number = content:match(pattern)
+    if number then found = tonumber(number) end
+  end)
   return found
 end
 
@@ -490,19 +535,11 @@ end
 --- Whether gear has a Use, on-hit or special Equip effect, so it is kept for
 -- what it does and never called outdated or sellable.
 local function readHasEffect(bag, slot)
-  if not (CreateFrame and UIParent) then return false end
-  if not skillTip then
-    skillTip = CreateFrame("GameTooltip", "MakeSpaceSkillTip", nil, "GameTooltipTemplate")
-  end
-  skillTip:SetOwner(UIParent, "ANCHOR_NONE")
-  skillTip:ClearLines()
-  skillTip:SetBagItem(bag, slot)
-  for line = 2, skillTip:NumLines() do
-    local text = _G["MakeSpaceSkillTipTextLeft" .. line]
-    local content = text and text:GetText()
-    if content and isEffectLine(content) then return true end
-  end
-  return false
+  local found = false
+  eachTooltipLine(bag, slot, 2, function(content)
+    if isEffectLine(content) then found = true return true end
+  end)
+  return found
 end
 
 --- The tooltip lines of an item in your bags, as the skill reader sees them, for
@@ -514,17 +551,8 @@ function MakeSpace.Scanner.TooltipTextOf(itemID)
     for slot = 1, C_Container.GetContainerNumSlots(bag) do
       local info = C_Container.GetContainerItemInfo(bag, slot)
       if info and info.itemID == itemID then
-        if not skillTip then
-          skillTip = CreateFrame("GameTooltip", "MakeSpaceSkillTip", nil, "GameTooltipTemplate")
-        end
-        skillTip:SetOwner(UIParent, "ANCHOR_NONE")
-        skillTip:ClearLines()
-        skillTip:SetBagItem(bag, slot)
         local lines = {}
-        for line = 1, skillTip:NumLines() do
-          local text = _G["MakeSpaceSkillTipTextLeft" .. line]
-          lines[#lines + 1] = text and text:GetText() or "?"
-        end
+        eachTooltipLine(bag, slot, 1, function(content) lines[#lines + 1] = content end, "?")
         return lines
       end
     end
@@ -544,27 +572,18 @@ local BANDAGE_SUBCLASS_ID = 7
 local function readRestores(bag, slot)
   -- returns restores (plain healing or mana text), givesBuff (a Well Fed style
   -- effect) and manaOnly (restores mana and no health: a drink or mana potion)
-  if not (CreateFrame and UIParent) then return false, false, false end
-  if not skillTip then
-    skillTip = CreateFrame("GameTooltip", "MakeSpaceSkillTip", nil, "GameTooltipTemplate")
-  end
-  skillTip:SetOwner(UIParent, "ANCHOR_NONE")
-  skillTip:ClearLines()
-  skillTip:SetBagItem(bag, slot)
   local restores, givesBuff = false, false
   local restoresHealth, restoresMana = false, false
-  for line = 2, skillTip:NumLines() do
-    local text = _G["MakeSpaceSkillTipTextLeft" .. line]
-    local content = text and text:GetText()
-    if content and content:find("Restores", 1, true) then
+  eachTooltipLine(bag, slot, 2, function(content)
+    if content:find("Restores", 1, true) then
       if content:find("health", 1, true) then restoresHealth = true end
       if content:find("mana", 1, true) then restoresMana = true end
       if restoresHealth or restoresMana then restores = true end
     end
-    if content and content:lower():find("well fed", 1, true) then
+    if content:lower():find("well fed", 1, true) then
       givesBuff = true
     end
-  end
+  end)
   return restores, givesBuff, restoresMana and not restoresHealth
 end
 
@@ -583,20 +602,11 @@ local LEVEL_LIMIT_PHRASES = { "up to level", "cannot be used", "can only be used
 -- @return boolean givesStats  an effect line names a stat, health or mana
 -- @return boolean levelLimited  an effect line carries its own level limit
 local function readConsumableTraits(bag, slot)
-  if not (CreateFrame and UIParent) then return false, false end
-  if not skillTip then
-    skillTip = CreateFrame("GameTooltip", "MakeSpaceSkillTip", nil, "GameTooltipTemplate")
-  end
-  skillTip:SetOwner(UIParent, "ANCHOR_NONE")
-  skillTip:ClearLines()
-  skillTip:SetBagItem(bag, slot)
   local givesStats, levelLimited = false, false
-  for line = 2, skillTip:NumLines() do
-    local text = _G["MakeSpaceSkillTipTextLeft" .. line]
-    local content = text and text:GetText()
-    local lower = content and content:lower()
+  eachTooltipLine(bag, slot, 2, function(content)
+    local lower = content:lower()
     -- Only the effect lines ("Use: ..."), not the item's own "Requires Level".
-    if lower and (lower:find("^use:") or lower:find("^equip:")) then
+    if lower:find("^use:") or lower:find("^equip:") then
       for _, word in ipairs(STAT_WORDS) do
         if lower:find(word, 1, true) then givesStats = true break end
       end
@@ -604,26 +614,18 @@ local function readConsumableTraits(bag, slot)
         if lower:find(phrase, 1, true) then levelLimited = true break end
       end
     end
-  end
+  end)
   return givesStats, levelLimited
 end
 
 --- How much a bandage heals, from its tooltip ("Heals 400 damage over 8 sec").
 local function readHealAmount(bag, slot)
-  if not (CreateFrame and UIParent) then return nil end
-  if not skillTip then
-    skillTip = CreateFrame("GameTooltip", "MakeSpaceSkillTip", nil, "GameTooltipTemplate")
-  end
-  skillTip:SetOwner(UIParent, "ANCHOR_NONE")
-  skillTip:ClearLines()
-  skillTip:SetBagItem(bag, slot)
-  for line = 2, skillTip:NumLines() do
-    local text = _G["MakeSpaceSkillTipTextLeft" .. line]
-    local content = text and text:GetText()
-    local amount = content and content:match("Heals ([%d,]+) damage")
-    if amount then return tonumber((amount:gsub(",", ""))) end
-  end
-  return nil
+  local healed
+  eachTooltipLine(bag, slot, 2, function(content)
+    local amount = content:match("Heals ([%d,]+) damage")
+    if amount then healed = tonumber((amount:gsub(",", ""))) return true end
+  end)
+  return healed
 end
 
 -- What an item's tooltip says never changes for the same item link, but reading
@@ -734,6 +736,8 @@ local function evaluateCached(item, state, profKey)
       .. ":" .. tostring(item.restoresManaOnly)
       .. ":" .. tostring(item.hasEffect)
       .. ":" .. tostring(item.healAmount) .. ":" .. tostring(item.healAmount and state.maxHealth and math.floor(state.maxHealth / 250))
+      .. ":" .. tostring(state.bestBandageID)
+      .. ":" .. tostring(item.betterInBags)
       .. ":" .. equippedKey(item)
       .. ":" .. tostring(item.bonusKey)
       .. ":" .. tostring(item.livePrice) .. ":" .. tostring(item.liveAge) .. ":" .. tostring(item.liveSteady)
@@ -800,6 +804,25 @@ local function scanAllSlots()
   for bag = 0, MakeSpace.Bags.LastScanned() do bagsToScan[#bagsToScan + 1] = bag end
   for _, bag in ipairs(MakeSpace.Bags.BankBags()) do bagsToScan[#bagsToScan + 1] = bag end
 
+  -- Read every slot first: whether a food or scroll is spare depends on what
+  -- else you carry (a better one of its kind that you can already use).
+  local gatheredItems = {}
+  local carriedItems = {}
+  for _, bag in ipairs(bagsToScan) do
+    local carried = MakeSpace.Bags.IsCarried(bag)
+    for slot = 1, C_Container.GetContainerNumSlots(bag) do
+      -- One item that fails must not take every other dot with it.
+      local gathered, item = pcall(gatherItem, bag, slot, state)
+      if not gathered then
+        lastScanError = "bag " .. bag .. " slot " .. slot .. ": " .. tostring(item)
+        item = nil
+      end
+      gatheredItems[bag .. ":" .. slot] = item or false
+      if item and carried then carriedItems[#carriedItems + 1] = item end
+    end
+  end
+  MakeSpace.Verdict.MarkBetterInBags(carriedItems, state.level)
+
   for _, bag in ipairs(bagsToScan) do
     local carried = MakeSpace.Bags.IsCarried(bag)
     if carried and bag <= regularBags then freeSlots = freeSlots + generalFreeSlots(bag) end
@@ -807,12 +830,7 @@ local function scanAllSlots()
     local numSlots = C_Container.GetContainerNumSlots(bag)
     for slot = 1, numSlots do
       local key = bag .. ":" .. slot
-      -- One item that fails must not take every other dot with it.
-      local gathered, item = pcall(gatherItem, bag, slot, state)
-      if not gathered then
-        lastScanError = "bag " .. bag .. " slot " .. slot .. ": " .. tostring(item)
-        item = nil
-      end
+      local item = gatheredItems[key] or nil
 
       if item and not carried then
         -- Banked on purpose, maybe for an alt: see Verdict.ForBank.
@@ -834,6 +852,8 @@ local function scanAllSlots()
         junkCandidates[#junkCandidates + 1] = {
           key = key, bag = bag, slot = slot, item = item,
           value = MakeSpace.MakeRoom.ValueOf(item.sellPrice, item.count),
+          -- What it fetches when sold the better way, for weighing against loot.
+          weighed = MakeSpace.MakeRoom.ValueOf(MakeSpace.Auction.SteadyValue(item), item.count),
         }
         if slotResults[key].tag == MakeSpace.Verdict.POOR_QUALITY_TAG then
           poorQuality[#poorQuality + 1] = {
@@ -892,7 +912,12 @@ local function scanAllSlots()
 
   for _, candidate in ipairs(junkCandidates) do
     if MakeSpace.MakeRoom.IsJunkCandidate(candidate.item, slotResults[candidate.key]) then
-      junkEntries[#junkEntries + 1] = candidate
+      -- Ranked by what it would fetch, so a gray-looking item that sells well
+      -- at auction is not the one offered for deletion.
+      junkEntries[#junkEntries + 1] = {
+        key = candidate.key, bag = candidate.bag, slot = candidate.slot,
+        item = candidate.item, value = candidate.weighed or candidate.value,
+      }
     end
   end
 
@@ -1007,6 +1032,17 @@ local function lootItem(itemID, link)
   return item, state
 end
 
+-- Loot that a price can judge: weighed by the vendor, or by a steady auction
+-- price when that is more. Returns false (not must-take) and the per-item value
+-- when the auction price is what decides it.
+local function weighedByPrice(info)
+  local item = lootItem(info.itemID, info.link)
+  if not item then return false end
+  local value = MakeSpace.Auction.SteadyValue(item)
+  if value > (info.sellPrice or 0) then return false, value end
+  return false
+end
+
 --- Is this loot something a price cannot judge?
 -- @param info table  { itemID, quality, sellPrice, classID, link }
 -- @return boolean priority, number|nil perItemValue  a value in copper when the
@@ -1020,7 +1056,8 @@ local function isPriorityLoot(info)
     return true
   end
   -- Finished the quests it was for, or a gray: it is only worth its price.
-  if wanted == false or info.quality == 0 then return false end
+  if info.quality == 0 then return false end
+  if wanted == false then return weighedByPrice(info) end
   if info.classID == 12 then return true end
   local data = MakeSpace.Data or {}
   local isReagent = data.ReagentProfessions and data.ReagentProfessions[info.itemID]
@@ -1041,7 +1078,7 @@ local function isPriorityLoot(info)
   -- No vendor price usually means it is worth something elsewhere (AH,
   -- quests, a use we cannot see).
   if (info.sellPrice or 0) == 0 then return true end
-  return false
+  return weighedByPrice(info)
 end
 
 --- Read the open loot window and rescan with it in mind.
@@ -1111,6 +1148,21 @@ function MakeSpace.Scanner.MakeRoomSummary()
     takes = takes,
     deletes = #lootPlan.deletes,
   }
+end
+
+--- The bag items the make-room plan would delete, for the loot window button.
+-- @return table  list of { bag, slot, itemID, count, name, value }
+function MakeSpace.Scanner.PlannedDeletes()
+  local planned = {}
+  for _, victim in ipairs(lootPlan.deletes) do
+    local item = victim.item or {}
+    planned[#planned + 1] = {
+      bag = victim.bag, slot = victim.slot, itemID = item.id,
+      count = item.count or 1, value = victim.value,
+      name = item.id and (getItemInfo(item.id)) or nil,
+    }
+  end
+  return planned
 end
 
 --- Is there loot waiting in an open loot window?
@@ -1196,6 +1248,12 @@ end
 --- Clear the verdict cache. Call when player state changes.
 function MakeSpace.Scanner.ClearCache()
   verdictCache = {}
+end
+
+--- Forget what was read from item tooltips. Not part of ClearCache: quests,
+-- skills and equipment change often and none of them change what an item's
+-- tooltip says, so clearing it there would only bring the cost back.
+function MakeSpace.Scanner.ClearTooltipCache()
   tooltipFacts = {}
 end
 

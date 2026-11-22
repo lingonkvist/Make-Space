@@ -1696,7 +1696,14 @@ describe("Outleveled consumables", function()
     for key, value in pairs(overrides or {}) do item[key] = value end
     return item
   end
-  local function at(level) return { level = level, professionNames = {}, professionsKnown = true } end
+  local function at(level)
+    return { level = level, professionNames = {}, professionsKnown = true }
+  end
+  -- better: the scanner found a better (or equal and worth more) one of its kind in your bags
+  local function judged(item, level, better)
+    item.betterInBags = better
+    return (MakeSpace.Verdict.Evaluate(item, at(level)))
+  end
 
   it("food made for a level 5 character is yellow at level 30", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(consumable(), at(30))
@@ -1713,8 +1720,107 @@ describe("Outleveled consumables", function()
     assert.is_nil((MakeSpace.Verdict.Evaluate(unread, at(60))))
   end)
 
-  it("stays silent while it is still within 20 levels", function()
-    assert.is_nil((MakeSpace.Verdict.Evaluate(consumable(), at(24))))
+  it("with better food in your bags, 10 levels below is enough", function()
+    assert.is_nil(judged(consumable(), 14, true))
+    assert.are.equal("yellow", judged(consumable(), 15, true))
+  end)
+
+  it("with nothing better in your bags, food waits until 15 levels below", function()
+    assert.is_nil(judged(consumable(), 19, false))
+    assert.are.equal("yellow", judged(consumable(), 20, false))
+    assert.are.equal("yellow", judged(consumable(), 20, nil))
+  end)
+
+  it("names the kind of food and scroll", function()
+    assert.are.equal("food", MakeSpace.Verdict.ConsumableKind(consumable()))
+    assert.are.equal("drink", MakeSpace.Verdict.ConsumableKind(consumable({ restoresManaOnly = true })))
+    assert.are.equal("strength", MakeSpace.Verdict.ConsumableKind({ id = 2289, classID = 0, subClassID = 4 }))
+    assert.are.equal("protection", MakeSpace.Verdict.ConsumableKind({ id = 3013, classID = 0, subClassID = 4 }))
+    assert.is_nil(MakeSpace.Verdict.ConsumableKind({ id = 99999, classID = 0, subClassID = 4 }))
+    assert.is_nil(MakeSpace.Verdict.ConsumableKind({ id = 1, classID = 0, subClassID = 1 }))
+  end)
+
+  describe("marking what is spare because of what else you carry", function()
+    local function food(id, level, count, price, overrides)
+      return consumable(overrides and (function()
+        local o = { id = id, reqLevel = level, count = count, sellPrice = price }
+        for k, v in pairs(overrides) do o[k] = v end
+        return o
+      end)() or { id = id, reqLevel = level, count = count, sellPrice = price })
+    end
+
+    it("a higher level one of the same kind that you can use makes the lower one spare", function()
+      local old, new = food(1, 35, 5, 8), food(2, 45, 5, 12)
+      MakeSpace.Verdict.MarkBetterInBags({ old, new }, 48)
+      assert.are.equal(true, old.betterInBags)
+      assert.are.equal(false, new.betterInBags)
+    end)
+
+    it("one you cannot use yet does not count", function()
+      local old, soon = food(1, 35, 5, 8), food(2, 52, 5, 12)
+      MakeSpace.Verdict.MarkBetterInBags({ old, soon }, 48)
+      assert.are.equal(false, old.betterInBags)
+    end)
+
+    it("of two at the same level, the one whose stack is worth less is the spare one", function()
+      local small, big = food(1, 35, 5, 8), food(2, 35, 20, 8)
+      MakeSpace.Verdict.MarkBetterInBags({ small, big }, 48)
+      assert.are.equal(true, small.betterInBags)
+      assert.are.equal(false, big.betterInBags)
+    end)
+
+    it("stacks of the same food are added up, and one food is never spare because of itself", function()
+      local a, b, other = food(1, 35, 5, 8), food(1, 35, 5, 8), food(2, 35, 8, 8)
+      MakeSpace.Verdict.MarkBetterInBags({ a, b, other }, 48)
+      assert.are.equal(false, a.betterInBags) -- 10 together beat the other food's 8
+      assert.are.equal(false, b.betterInBags)
+      assert.are.equal(true, other.betterInBags)
+      local alone, twin = food(3, 35, 5, 8), food(3, 35, 5, 8)
+      MakeSpace.Verdict.MarkBetterInBags({ alone, twin }, 48)
+      assert.are.equal(false, alone.betterInBags)
+    end)
+
+    it("equal stacks leave exactly one of them spare", function()
+      local x, y = food(1, 35, 5, 8), food(2, 35, 5, 8)
+      MakeSpace.Verdict.MarkBetterInBags({ x, y }, 48)
+      assert.are.equal(1, (x.betterInBags and 1 or 0) + (y.betterInBags and 1 or 0))
+    end)
+
+    it("drink does not make food spare, and a scroll is compared only with its own stat", function()
+      local bread = food(1, 35, 5, 8)
+      local water = food(2, 45, 5, 8, { restoresManaOnly = true })
+      MakeSpace.Verdict.MarkBetterInBags({ bread, water }, 48)
+      assert.are.equal(false, bread.betterInBags)
+      local strength = { id = 2289, classID = 0, subClassID = 4, reqLevel = 25, count = 1, sellPrice = 5 }
+      local agility = { id = 4425, classID = 0, subClassID = 4, reqLevel = 40, count = 1, sellPrice = 5 }
+      MakeSpace.Verdict.MarkBetterInBags({ strength, agility }, 48)
+      assert.are.equal(false, strength.betterInBags)
+    end)
+  end)
+
+  it("from level 55 the gap is 15, so the level 45 stuff holds until 60", function()
+    local function late(level, better) return judged(consumable({ reqLevel = 45 }), level, better) end
+    assert.is_nil(late(54, true))
+    assert.is_nil(late(55, true))
+    assert.is_nil(late(59, true))
+    assert.are.equal("yellow", late(60, true))
+    assert.is_nil(judged(consumable({ reqLevel = 46 }), 60, true))
+    -- the same 15 with nothing better in the bags
+    assert.is_nil(late(59, false))
+    assert.are.equal("yellow", late(60, false))
+  end)
+
+  it("never un-flags on the way to 55: what was flagged at 54 stays flagged", function()
+    local function older(level, better) return judged(consumable({ reqLevel = 44 }), level, better) end
+    assert.are.equal("yellow", older(54, true))
+    for level = 55, 59 do assert.are.equal("yellow", older(level, true)) end
+    -- and with nothing better it is flagged from the same level onward once flagged
+    local flagged = false
+    for level = 40, 70 do
+      local verdict = older(level, false)
+      if flagged then assert.are.equal("yellow", verdict) end
+      if verdict == "yellow" then flagged = true end
+    end
   end)
 
   it("covers potions, bandages, elixirs and flasks", function()
@@ -1875,6 +1981,45 @@ describe("Outleveled reagents", function()
   end)
 end)
 
+describe("Intellect scrolls for classes that get nothing from Intellect", function()
+  local function scroll(id, overrides)
+    local item = { id = id, classID = 0, subClassID = 4, quality = 1, reqLevel = 35, count = 1, sellPrice = 100 }
+    for k, v in pairs(overrides or {}) do item[k] = v end
+    return item
+  end
+  local function as(class, level, names)
+    return { level = level or 48, playerClass = class, professionNames = names or {}, professionsKnown = true }
+  end
+
+  it("a warrior or rogue gets a yellow, at any level", function()
+    local verdict, reason, _, _, rule, heading = MakeSpace.Verdict.Evaluate(scroll(4419), as("WARRIOR"))
+    assert.are.equal("yellow", verdict)
+    assert.are.equal("Warriors get nothing from Intellect", reason)
+    assert.are.equal("Useless to Warriors", heading.title)
+    assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(scroll(2290, { reqLevel = 20 }), as("ROGUE", 21))))
+    assert.are.equal("Rogues get nothing from Intellect",
+      select(2, MakeSpace.Verdict.Evaluate(scroll(10308, { reqLevel = 55 }), as("ROGUE", 55))))
+  end)
+
+  it("a class that uses Intellect, or another stat for a warrior, is left alone", function()
+    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(4419), as("MAGE"))))
+    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(4419), as("HUNTER"))))
+    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(4426), as("WARRIOR")))) -- Strength
+  end)
+
+  it("an Enchanter keeps it when it is an Enchanting reagent", function()
+    local saved = MakeSpace.Data.ReagentProfessions
+    MakeSpace.Data.ReagentProfessions = { [4419] = { { "Enchanting", 1, 200, 200, 220 } } }
+    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(4419), as("WARRIOR", 48, { Enchanting = true }))))
+    assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(scroll(4419), as("WARRIOR", 48))))
+    MakeSpace.Data.ReagentProfessions = saved
+  end)
+
+  it("a quest you are on, or one it starts, holds it", function()
+    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(4419, { startsQuestID = 77 }), as("WARRIOR"))))
+  end)
+end)
+
 describe("Mana potions for classes without mana", function()
   local function potion(id) return { id = id, classID = 0, subClassID = 1, quality = 1, reqLevel = 0, count = 5, sellPrice = 50 } end
   local function as(class, level) return { level = level or 30, playerClass = class, professionNames = {}, professionsKnown = true } end
@@ -1883,7 +2028,7 @@ describe("Mana potions for classes without mana", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(potion(3827), as("WARRIOR"))
 
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Warriors have no mana. May sell at the auction house", reason)
+    assert.are.equal("Warriors have no mana", reason)
     assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(potion(13443), as("ROGUE"))))
   end)
 
@@ -1892,7 +2037,7 @@ describe("Mana potions for classes without mana", function()
     MakeSpace.Data.AuctionPriceCeiling = { [3827] = 5000 }
     local _, _, _, _, _, _, snapshotNote, _, snapshotLive = MakeSpace.Verdict.Evaluate(potion(3827), as("WARRIOR"))
     local live = potion(3827)
-    live.livePrice, live.liveAge = 5000, 0
+    live.livePrice, live.liveAge, live.liveSteady = 5000, 0, true
     local _, _, _, _, _, _, liveNote, _, liveFlag = MakeSpace.Verdict.Evaluate(live, as("WARRIOR"))
     MakeSpace.Data.AuctionPriceCeiling = saved
     assert.is_truthy(snapshotNote)
@@ -1904,16 +2049,40 @@ describe("Mana potions for classes without mana", function()
     assert.are.equal(true, judged.auctionNoteLive)
   end)
 
-  it("rounds the auction side of a price up to whole silver, and leaves copper under a silver", function()
+  it("trusts a live Auctionator price only when it is steady, else shows the fallback", function()
+    local saved = MakeSpace.Data.AuctionPriceCeiling
+    local function noteFor(id, fields, ceiling)
+      MakeSpace.Data.AuctionPriceCeiling = ceiling and { [id] = ceiling } or {}
+      local item = id == 4419 and { id = 4419, classID = 0, subClassID = 4, quality = 1, reqLevel = 35, count = 1, sellPrice = 112 }
+          or potion(id)
+      for k, v in pairs(fields) do item[k] = v end
+      local _, _, _, _, _, _, note = MakeSpace.Verdict.Evaluate(item, as("WARRIOR", 48))
+      return note
+    end
+    for _, id in ipairs({ 3827, 4419 }) do
+      assert.is_truthy(noteFor(id, { livePrice = 900, liveAge = 0, liveSteady = true }, 900):find("auction about", 1, true))
+      assert.is_truthy(noteFor(id, { livePrice = 900, liveAge = 0, liveSteady = false }, 900):find("auction up to", 1, true))
+      assert.is_nil(noteFor(id, { livePrice = 900, liveAge = 0, liveSteady = false }, 60))
+      assert.is_nil(noteFor(id, { livePrice = 900, liveAge = 0, liveSteady = false }, nil))
+    end
+    MakeSpace.Data.AuctionPriceCeiling = saved
+  end)
+
+  it("rounds the auction side to the nearest silver under 10s, up from there, and leaves copper under a silver", function()
     local note = MakeSpace.Auction.PriceNote
     local vendorOnly = { sellPrice = 120 }
     assert.are.equal("Vendor 1s 20c, auction up to 5s", note(vendorOnly, 487, "snapshot"))
     assert.are.equal("Vendor 1s 20c, auction about 5s", note(vendorOnly, 487, "live"))
     assert.are.equal("Vendor 1s 20c, auction about 5s", note(vendorOnly, 500, "live"))
-    assert.are.equal("Vendor 1s 20c, auction about 1g 21s", note(vendorOnly, 12005, "live"))
     assert.are.equal("Vendor 1s 20c, auction about 26c", note(vendorOnly, 26, "live"))
-    -- the vendor side is exact
-    assert.are.equal("Vendor 1s 20c, auction about 2s", note(vendorOnly, 101, "live"))
+    -- nearest below 10s: 1s 1c is a guess of one silver, 1s 50c is two
+    assert.are.equal("Vendor 1s 20c, auction about 1s", note(vendorOnly, 101, "live"))
+    assert.are.equal("Vendor 1s 20c, auction about 2s", note(vendorOnly, 150, "live"))
+    assert.are.equal("Vendor 1s 20c, auction about 9s", note(vendorOnly, 949, "live"))
+    assert.are.equal("Vendor 1s 20c, auction about 10s", note(vendorOnly, 950, "live"))
+    -- from 10s up it rounds up, so a dear item is never undersold
+    assert.are.equal("Vendor 1s 20c, auction about 11s", note(vendorOnly, 1001, "live"))
+    assert.are.equal("Vendor 1s 20c, auction about 1g 21s", note(vendorOnly, 12005, "live"))
   end)
 
   it("shows the price line when the auction pays more than a vendor", function()
@@ -1939,6 +2108,30 @@ describe("Mana potions for classes without mana", function()
     assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(potion(99001), as("WARRIOR"))))
     assert.is_nil((MakeSpace.Verdict.Evaluate(potion(99002), as("WARRIOR"))))
     MakeSpace.Data.ManaOnlyConsumables = saved
+  end)
+end)
+
+describe("Mana potions a quest still wants", function()
+  local warrior = { level = 40, maxHealth = 2800, playerClass = "WARRIOR", professionNames = {}, professionsKnown = true }
+  local function manaPotion(overrides)
+    local item = { id = 3827, classID = 0, subClassID = 1, quality = 1, reqLevel = 22,
+                   restoresHealthOrMana = true, restoresManaOnly = true }
+    for key, value in pairs(overrides or {}) do item[key] = value end
+    return item
+  end
+
+  it("is no longer called useless while a quest in your log wants it", function()
+    local item = manaPotion({ questItemQuestIDs = { 1 }, openQuestIDs = { 1 }, onOpenQuest = true })
+    assert.is_nil((MakeSpace.Verdict.Evaluate(item, warrior)))
+  end)
+
+  it("is left alone when it starts a quest", function()
+    assert.is_nil((MakeSpace.Verdict.Evaluate(manaPotion({ startsQuestID = 99 }), warrior)))
+  end)
+
+  it("a quest you have not taken does not hold it back", function()
+    local item = manaPotion({ questItemQuestIDs = { 1 }, openQuestIDs = { 1 }, onOpenQuest = false })
+    assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(item, warrior)))
   end)
 end)
 
@@ -2303,9 +2496,11 @@ describe("Yellow headings", function()
       { { "bank_used_from", "Mining", 175 }, "Bank it, used from Mining 175",            "Bank it",             "Used from Mining 175" },
       { { "outleveled_reagent", "Mining", 125 }, "Outleveled, Mining recipes use it up to 125", "Outleveled reagent", "Mining recipes use it up to 125" },
       { { "low_level_consumable", "food", 5, 30 }, "Low-level food (level 5, you are 30)", "Low-level food",    nil },
-      { { "weak_bandage", 400, 9, 4500 },    "Weak bandage", "Weak bandage", "Heals 9% of your health (400 of 4500)" },
+      { { "weak_bandage", 9 },               "Weak bandage (heals 9%)", "Weak bandage (heals 9%)", nil },
+      { { "weak_bandage", 9, "Silk Bandage" }, "Weak bandage (heals 9%)", "Weak bandage (heals 9%)", "Best for you: Silk Bandage" },
       { { "open_it" },                      "Open it, the contents may stack",           "Open it",             "Contents may stack" },
-      { { "no_mana", "Warriors" },          "Warriors have no mana. May sell at the auction house", "Useless to Warriors", nil },
+      { { "no_mana", "Warriors" },          "Warriors have no mana", "Useless to Warriors", nil },
+      { { "no_use_stat", "Warriors", "Intellect" }, "Warriors get nothing from Intellect", "Useless to Warriors", nil },
       { { "wrong_class_reagent", "Mage, Priest only (world drop)" }, "Mage, Priest only (world drop)", "Wrong class reagent", "Mage, Priest only (world drop)" },
       { { "other_profession_reagent", { "Alchemy", "Tailoring" } }, "Only used by professions you don't have. May sell at the auction house", "Not your profession", "Used by Alchemy, Tailoring" },
       { { "other_profession_reagent", { "A", "B", "C", "D" } }, "Only used by professions you don't have. May sell at the auction house", "Not your profession", "Used by 4 professions" },
@@ -2845,7 +3040,7 @@ describe("Drinks for classes without mana", function()
   it("a warrior or rogue gets the no-mana yellow on a drink", function()
     local verdict, reason, _, _, rule = MakeSpace.Verdict.Evaluate(drink(), as("WARRIOR"))
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Warriors have no mana. May sell at the auction house", reason)
+    assert.are.equal("Warriors have no mana", reason)
     assert.are.equal("mana_consumable", rule)
     assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(drink(), as("ROGUE"))))
   end)
@@ -3552,19 +3747,19 @@ describe("Weak bandages and outleveled scrolls", function()
     return { level = level, maxHealth = health, professionNames = names or {}, professionsKnown = true }
   end
 
-  it("a bandage under 15% of your health is yellow, with the numbers", function()
+  it("a bandage under 20% of your health is yellow", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(bandage(400), at(60, 4500))
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Weak bandage", reason)
+    assert.are.equal("Weak bandage (heals 9%)", reason)
   end)
 
   it("a bandage that heals enough is left alone", function()
     assert.is_nil((MakeSpace.Verdict.Evaluate(bandage(2000), at(60, 4500))))
-    assert.is_nil((MakeSpace.Verdict.Evaluate(bandage(675), at(60, 4500))))
+    assert.is_nil((MakeSpace.Verdict.Evaluate(bandage(900), at(60, 4500))))
   end)
 
   it("flags just under the line", function()
-    assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(bandage(674), at(60, 4500))))
+    assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(bandage(899), at(60, 4500))))
   end)
 
   it("without health or heal data a bandage with no level gets nothing", function()
@@ -3589,13 +3784,20 @@ describe("Weak bandages and outleveled scrolls", function()
     assert.are.equal("Low-level scroll (level 25, you are 45)", reason)
   end)
 
-  it("not yet when the gap is under 20 levels", function()
-    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(2289, { reqLevel = 25 }), at(44, 3000))))
+  it("not yet when the gap is under 10 levels with a better one in the bags, 15 without", function()
+    local function judgedScroll(level, better)
+      local item = scroll(2289, { reqLevel = 25, betterInBags = better })
+      return (MakeSpace.Verdict.Evaluate(item, at(level, 3000)))
+    end
+    assert.is_nil(judgedScroll(34, true))
+    assert.are.equal("yellow", judgedScroll(35, true))
+    assert.is_nil(judgedScroll(39, false))
+    assert.are.equal("yellow", judgedScroll(40, false))
   end)
 
   it("a scroll without a required level uses its item level", function()
     assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(scroll(3013, { itemLevel = 10 }), at(40, 3000))))
-    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(3013, { itemLevel = 10 }), at(29, 3000))))
+    assert.is_nil((MakeSpace.Verdict.Evaluate(scroll(3013, { itemLevel = 10 }), at(19, 3000))))
   end)
 
   it("an Enchanter keeps scrolls that are Enchanting reagents", function()
@@ -3654,7 +3856,7 @@ describe("Elixirs and flasks made for a much lower level", function()
   end)
 
   it("one closer to your level is left alone", function()
-    assert.is_nil((MakeSpace.Verdict.Evaluate(consumable(2, 35), state)))
+    assert.is_nil((MakeSpace.Verdict.Evaluate(consumable(2, 45), state)))
   end)
 
   it("an elixir with no required level is left alone", function()
@@ -3757,7 +3959,7 @@ describe("Quests do not hide a weak bandage", function()
   it("a quest you have not taken (war effort turn-ins) does not stop the hint", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(woolBandage(), state)
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Weak bandage", reason)
+    assert.are.equal("Weak bandage (heals 11%)", reason)
   end)
 
   it("a quest you are on still holds it back", function()
@@ -4078,5 +4280,95 @@ describe("Special items that carry a placeholder level", function()
       local item = { id = id, classID = 7, subClassID = 8, quality = 1, count = 5, sellPrice = 0 }
       assert.is_nil((MakeSpace.Verdict.Evaluate(item, state)))
     end
+  end)
+end)
+
+
+describe("Naming the best potion or bandage", function()
+  local saved
+  local function evaluate(item, state)
+    local verdict, _, _, _, _, heading = MakeSpace.Verdict.Evaluate(item, state)
+    return verdict, heading
+  end
+  local function potion(id, reqLevel)
+    return { id = id, classID = 0, subClassID = 1, quality = 1, reqLevel = reqLevel, restoresHealthOrMana = true }
+  end
+  local function at(level, extra)
+    local state = { level = level, maxHealth = 3000, playerClass = "WARRIOR", professionNames = {}, professionsKnown = true }
+    for key, value in pairs(extra or {}) do state[key] = value end
+    return state
+  end
+
+  it("loads its tiers", function()
+    saved = MakeSpace.Data.ConsumableTiers
+    dofile("data/consumable_tiers.lua")
+    assert.is_truthy(MakeSpace.Data.ConsumableTiers)
+  end)
+
+  it("names the best healing potion you can use, with its level", function()
+    -- Superior (35) at 48: the Major (45) is usable
+    local verdict, heading = evaluate(potion(3928, 35), at(48))
+    assert.are.equal("yellow", verdict)
+    assert.are.equal("Low-level potion", heading.title)
+    assert.are.equal("Best for you: Major Healing Potion (level 45)", heading.detail)
+  end)
+
+  it("names a lower tier while the top one is out of reach", function()
+    -- Lesser Healing Potion (3) at 20: the Healing Potion (12) is the best you can use
+    local _, heading = evaluate(potion(858, 3), at(20))
+    assert.are.equal("Best for you: Healing Potion (level 12)", heading.detail)
+  end)
+
+  it("says nothing extra when the potion is already the best you can use", function()
+    local verdict, heading = evaluate(potion(13446, 45), at(70))
+    assert.are.equal("yellow", verdict)
+    assert.is_nil(heading.detail)
+  end)
+
+  it("says nothing for a potion the tier data does not list", function()
+    local _, heading = evaluate(potion(99999, 5), at(40))
+    assert.are.equal("Low-level potion", heading.title)
+    assert.is_nil(heading.detail)
+  end)
+
+  it("never suggests a mana potion to a class with no mana", function()
+    local mana = potion(3385, 14)
+    mana.restoresManaOnly = true
+    local verdict, heading = evaluate(mana, at(50))
+    assert.are.equal("yellow", verdict)
+    assert.are.equal("Useless to Warriors", heading.title)
+    -- and a caster gets the mana line
+    local _, casterHeading = evaluate(mana, at(50, { playerClass = "MAGE" }))
+    assert.are.equal("Best for you: Major Mana Potion (level 49)", casterHeading.detail)
+  end)
+
+  local function bandage(id, heal)
+    return { id = id, classID = 0, subClassID = 7, quality = 1, healAmount = heal }
+  end
+  local HEAVY_LINEN, HEAVY_WOOL, SILK, HEAVY_SILK = 2581, 3531, 6450, 6451
+
+  it("names the best bandage you have learned to make", function()
+    local verdict, heading = evaluate(bandage(HEAVY_LINEN, 114), at(40, { maxHealth = 2000, bestBandageID = SILK }))
+    assert.are.equal("yellow", verdict)
+    assert.are.equal("Weak bandage (heals 6%)", heading.title)
+    assert.are.equal("Best for you: Silk Bandage", heading.detail)
+  end)
+
+  it("gives no suggestion without First Aid, or when this is already the best you make", function()
+    local _, none = evaluate(bandage(HEAVY_LINEN, 114), at(40, { maxHealth = 2000 }))
+    assert.are.equal("Weak bandage (heals 6%)", none.title)
+    assert.is_nil(none.detail)
+    local _, best = evaluate(bandage(HEAVY_WOOL, 301), at(40, { maxHealth = 2000, bestBandageID = HEAVY_WOOL }))
+    assert.are.equal("Weak bandage (heals 15%)", best.title)
+    assert.is_nil(best.detail)
+    -- a weaker one than what you make is not "best" for you either
+    local _, weaker = evaluate(bandage(HEAVY_SILK, 640), at(50, { maxHealth = 4000, bestBandageID = HEAVY_WOOL }))
+    assert.are.equal("Weak bandage (heals 16%)", weaker.title)
+    assert.is_nil(weaker.detail)
+  end)
+
+  it("puts the tiers back", function()
+    MakeSpace.Data.ConsumableTiers = saved
+    assert.are.equal(saved, MakeSpace.Data.ConsumableTiers)
   end)
 end)

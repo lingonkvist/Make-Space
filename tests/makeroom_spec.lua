@@ -152,7 +152,7 @@ describe("MakeRoom.MarkedResult", function()
     local result = MakeSpace.MakeRoom.MarkedResult(existing, 205)
     assert.are.equal("green", result.verdict)
     assert.are.equal("Cheapest gray, sells for 5c", result.reason)
-    assert.are.equal("Delete to make room for your loot", result.detail)
+    assert.are.equal("Delete to make room for loot", result.detail)
     assert.is_nil(existing.detail)
   end)
 
@@ -202,6 +202,12 @@ describe("Make room banner text", function()
       banner({ active = true, deletes = 1, leaving = 0, deleteNames = { "Torn Rag" } }))
     assert.are.equal("Bags full: consider deleting Torn Rag and 2 more",
       banner({ active = true, deletes = 3, leaving = 0, deleteNames = { "Torn Rag", "A", "B" } }))
+  end)
+
+  it("cuts a long name so the banner stays one line", function()
+    local text = banner({ active = true, deletes = 2, leaving = 0,
+      deleteNames = { "Greater Scarlet Crusader Gauntlets of the Whale", "A" } })
+    assert.are.equal("Bags full: consider deleting Greater Scarlet Cru... and 1 more", text)
   end)
 
   it("explains why loot is left (the tooltip names the junk)", function()

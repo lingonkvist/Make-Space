@@ -147,3 +147,33 @@ describe("Curves.SnapshotNotice", function()
     assert.is_truthy(text:find("no longer used", 1, true))
   end)
 end)
+
+describe("Auction.SteadyValue", function()
+  local function item(fields)
+    local base = { id = 1, sellPrice = 100, classID = 15, quality = 1, livePrice = 1000, liveSteady = true }
+    for k, v in pairs(fields or {}) do base[k] = v end
+    return base
+  end
+
+  it("is the vendor price with no live price", function()
+    assert.are.equal(100, MakeSpace.Auction.SteadyValue(item({ livePrice = false, liveSteady = false })))
+  end)
+
+  it("is the live price after the auction cut when it has held steady", function()
+    assert.are.equal(950, MakeSpace.Auction.SteadyValue(item()))
+  end)
+
+  it("is the vendor price when the live price has not held steady", function()
+    assert.are.equal(100, MakeSpace.Auction.SteadyValue(item({ liveSteady = false })))
+  end)
+
+  it("is the vendor price when the auction price is lower", function()
+    assert.are.equal(100, MakeSpace.Auction.SteadyValue(item({ livePrice = 50 })))
+  end)
+
+  it("is the vendor price for something you cannot sell at auction, or a versioned item", function()
+    assert.are.equal(100, MakeSpace.Auction.SteadyValue(item({ isBound = true })))
+    assert.are.equal(100, MakeSpace.Auction.SteadyValue(item({ bindType = 1 })))
+    assert.are.equal(100, MakeSpace.Auction.SteadyValue(item({ bonusKey = "x" })))
+  end)
+end)

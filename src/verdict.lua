@@ -753,12 +753,7 @@ end
 
 -- The uses merged per profession into { name, minSkill, maxSkill, greenSkill }.
 -- Public so the tooltip shows the same ranges the verdict judges by.
-local reagentUses
-function MakeSpace.Verdict.ReagentUses(itemID, state, nearOnly)
-  return reagentUses(itemID, state, nearOnly)
-end
-
-function reagentUses(itemID, state, nearOnly)
+local function reagentUses(itemID, state, nearOnly)
   local list = useList(itemID, state, nearOnly)
   if not list then return nil end
   local merged, order = {}, {}
@@ -778,6 +773,7 @@ function reagentUses(itemID, state, nearOnly)
   end
   return order
 end
+MakeSpace.Verdict.ReagentUses = reagentUses
 
 -- Each use of a reagent on its own, direct and through what is made from it,
 -- kept apart. Merged into one range they hide a gap ("used up to 65, then
@@ -975,22 +971,45 @@ end
 -- restore little now. Only a hint: you may want the stack for an alt.
 local CONSUMABLE_CLASS = 0
 local OUTLEVELED_SUBCLASSES = { [1] = true, [2] = true, [3] = true, [4] = true, [5] = true, [7] = true } -- potion, elixir, flask, scroll, food and drink, bandage
-local OUTLEVELED_GAP = 20
+-- How far below you an item's required level must be before it is called
+-- low-level: 10 levels, and 15 from level 55, where much of the best stuff
+-- needs 45. The line only moves up, so something flagged at 54 is still flagged
+-- at 55 (the 15 only starts to bite at 60).
+local OUTLEVELED_GAP = 10
+local LATE_GAME_FROM = 55
+local LATE_GAME_GAP = 15
+-- Food, drink and stat scrolls still do their job a tier down, so the gap is
+-- bigger (15) unless your bags hold a better one of the same kind that you can
+-- already use, which makes the old one plainly spare (the 10 above).
+local NO_BETTER_GAP = 15
+local function outleveledCutoff(level)
+  local cutoff = level - OUTLEVELED_GAP
+  if level >= LATE_GAME_FROM then
+    cutoff = math.max(LATE_GAME_FROM - 1 - OUTLEVELED_GAP, level - LATE_GAME_GAP)
+  end
+  return cutoff
+end
 local CONSUMABLE_NOUNS = { [1] = "potion", [2] = "elixir", [3] = "flask", [4] = "scroll", [5] = "food", [7] = "bandage" }
 local FOOD_SUBCLASS = 5
 local ELIXIR_SUBCLASS = 2
 local FLASK_SUBCLASS = 3
 local SCROLL_SUBCLASS = 4
 local BANDAGE_SUBCLASS = 7
--- A bandage that heals less than this share of your health is a weak one.
-local WEAK_BANDAGE_FRACTION = 0.15
+-- A bandage that heals less than this share of your health is a weak one (20%).
+local WEAK_BANDAGE_FRACTION = 0.20
 -- The stat scrolls (Strength, Agility, Stamina, Intellect, Spirit, Protection,
 -- every rank). Other scrolls in the same class are not for this rule.
-local STAT_SCROLLS = {}
-for _, id in ipairs({ 954, 955, 1180, 1181, 1477, 1478, 1711, 1712, 2289, 2290, 3012, 3013,
-    4419, 4421, 4422, 4424, 4425, 4426, 10305, 10306, 10307, 10308, 10309, 10310 }) do
-  STAT_SCROLLS[id] = true
+-- Which stat each one gives, so a Strength scroll is only ever compared with
+-- another Strength scroll.
+local SCROLL_STAT = {}
+for stat, ids in pairs({
+  strength = { 954, 2289, 4426, 10310 }, agility = { 3012, 1477, 4425, 10309 },
+  stamina = { 1180, 1711, 4422, 10307 }, intellect = { 955, 2290, 4419, 10308 },
+  spirit = { 1181, 1712, 4424, 10306 }, protection = { 3013, 1478, 4421, 10305 },
+}) do
+  for _, id in ipairs(ids) do SCROLL_STAT[id] = stat end
 end
+local STAT_SCROLLS = SCROLL_STAT
 local POTION_SUBCLASS = 1
 
 local CLASS_PLURALS_FOR_POTIONS = { WARRIOR = "Warriors", ROGUE = "Rogues" }
@@ -1018,8 +1037,130 @@ end
 -- reads the tooltip instead and says when an item restores mana and nothing else.
 local function evaluateManaConsumable(item, state)
   if not (isManaOnly(item.id) or item.restoresManaOnly == true) then return nil end
+  -- A quest you are on, or one this item starts, still wants it.
+  if item.startsQuestID then return nil end
+  if item.onOpenQuest and heldByOpenQuest(item, state) then return nil end
   if not CLASSES_WITHOUT_MANA[state.playerClass or ""] then return nil end
   return yellow("no_mana", CLASS_PLURALS_FOR_POTIONS[state.playerClass])
+end
+
+-- A stat scroll for a stat your class gets nothing from: Intellect for a warrior
+-- or a rogue (it only feeds mana and spell crit). The other stats help every class.
+local CLASSES_WITHOUT_INTELLECT = { WARRIOR = true, ROGUE = true }
+local function evaluateUselessStatScroll(item, state)
+  if item.classID ~= CONSUMABLE_CLASS or item.subClassID ~= SCROLL_SUBCLASS then return nil end
+  if SCROLL_STAT[item.id] ~= "intellect" then return nil end
+  if not CLASSES_WITHOUT_INTELLECT[state.playerClass or ""] then return nil end
+  if item.startsQuestID then return nil end
+  if item.onOpenQuest and heldByOpenQuest(item, state) then return nil end
+  -- An Enchanter may still want it: some scrolls are reagents for Enchanting.
+  local uses = MakeSpace.Data.ReagentProfessions and MakeSpace.Data.ReagentProfessions[item.id]
+  if uses and hasEnchanting(state) then return nil end
+  return yellow("no_use_stat", CLASS_PLURALS_FOR_POTIONS[state.playerClass], "Intellect")
+end
+
+-- The tiers of the healing and mana potions and of the bandages
+-- (data/consumable_tiers.lua), looked up by item ID.
+local tierIndex, tierIndexFor
+local function tierLookup()
+  local data = MakeSpace.Data and MakeSpace.Data.ConsumableTiers
+  if tierIndexFor ~= data or not tierIndex then
+    tierIndexFor = data
+    tierIndex = { potions = {}, bandages = {} }
+    if data then
+      for line, tiers in pairs(data.potions or {}) do
+        for index, tier in ipairs(tiers) do
+          for _, id in ipairs(tier.ids) do tierIndex.potions[id] = { line = line, index = index } end
+        end
+      end
+      for index, bandage in ipairs(data.bandages or {}) do tierIndex.bandages[bandage.id] = index end
+    end
+  end
+  return tierIndex, data
+end
+
+-- The best potion of the same kind you can use, when it is a step up from this
+-- one: "Major Healing Potion (level 45)". Nothing for a potion the data does
+-- not list, so an unknown potion never gets a guess.
+local function betterPotion(item, state)
+  local lookup, data = tierLookup()
+  local here = lookup.potions[item.id]
+  if not here then return nil end
+  if here.line == "mana" and CLASSES_WITHOUT_MANA[state.playerClass or ""] then return nil end
+  local tiers = data.potions[here.line]
+  for index = #tiers, here.index + 1, -1 do
+    if (state.level or 0) >= tiers[index].level then
+      return tiers[index].name .. " (level " .. tiers[index].level .. ")"
+    end
+  end
+  return nil
+end
+
+-- The best bandage you have learned to make, when it beats this one. The scanner
+-- says which that is (state.bestBandageID); no First Aid, no suggestion.
+local function betterBandage(item, state)
+  local lookup, data = tierLookup()
+  local here = lookup.bandages[item.id]
+  local best = state.bestBandageID and lookup.bandages[state.bestBandageID]
+  if here and best and best > here then return data.bandages[best].name end
+  return nil
+end
+
+--- Which "kind" a food or scroll belongs to, for comparing like with like: food,
+-- drink, or the scroll's stat. nil for anything else.
+function MakeSpace.Verdict.ConsumableKind(item)
+  if item.classID ~= CONSUMABLE_CLASS then return nil end
+  if item.subClassID == FOOD_SUBCLASS then return item.restoresManaOnly and "drink" or "food" end
+  if item.subClassID == SCROLL_SUBCLASS then return SCROLL_STAT[item.id] end
+  return nil
+end
+
+--- The level a food or scroll is judged by: its required level, or for a scroll
+-- with none, its item level. nil when it has neither.
+function MakeSpace.Verdict.ConsumableLevel(item)
+  local level = item.reqLevel
+  if (not level or level <= 0) and item.subClassID == SCROLL_SUBCLASS then level = item.itemLevel end
+  if not level or level <= 0 then return nil end
+  return level
+end
+
+--- Mark each food and scroll that is spare because of what else you carry:
+-- a different one of its kind that you can already use and that is better, either
+-- for a higher level or, at the same level, a stack worth more (stacks of one item
+-- are added up). Sets item.betterInBags on every food and scroll in the list.
+-- @param items table  the items you carry, as the scanner builds them
+-- @param playerLevel number
+function MakeSpace.Verdict.MarkBetterInBags(items, playerLevel)
+  local byKind = {}
+  for _, item in ipairs(items) do
+    local kind = MakeSpace.Verdict.ConsumableKind(item)
+    local level = kind and MakeSpace.Verdict.ConsumableLevel(item)
+    if level then
+      local group = byKind[kind] or {}
+      byKind[kind] = group
+      local entry = group[item.id]
+      if not entry then
+        entry = { id = item.id, level = level, value = 0 }
+        group[item.id] = entry
+      end
+      entry.value = entry.value + (item.sellPrice or 0) * (item.count or 1)
+    end
+  end
+  for _, item in ipairs(items) do
+    local kind = MakeSpace.Verdict.ConsumableKind(item)
+    local mine = kind and byKind[kind] and byKind[kind][item.id]
+    if mine then
+      item.betterInBags = false
+      for id, other in pairs(byKind[kind]) do
+        if id ~= item.id and other.level <= (playerLevel or 1) then
+          local better = other.level > mine.level
+              or (other.level == mine.level
+                  and (other.value > mine.value or (other.value == mine.value and other.id < mine.id)))
+          if better then item.betterInBags = true break end
+        end
+      end
+    end
+  end
 end
 
 local function evaluateOutleveledConsumable(item, state)
@@ -1049,7 +1190,7 @@ local function evaluateOutleveledConsumable(item, state)
       and state.maxHealth > 0 then
     local share = item.healAmount / state.maxHealth
     if share >= WEAK_BANDAGE_FRACTION then return nil end
-    return yellow("weak_bandage", item.healAmount, math.floor(share * 100 + 0.5), state.maxHealth)
+    return yellow("weak_bandage", math.floor(share * 100 + 0.5), betterBandage(item, state))
   end
   -- Utility potions (swimming speed, water walking, free action) stay useful
   -- at any level. Only a potion known to restore health or mana can be outleveled.
@@ -1058,14 +1199,16 @@ local function evaluateOutleveledConsumable(item, state)
   -- healing is not flagged: its effect can still beat what you carry.
   if item.subClassID == FOOD_SUBCLASS
       and (item.restoresHealthOrMana ~= true or item.givesBuff == true) then return nil end
-  local reqLevel = item.reqLevel
   -- Some scrolls have no required level; their item level stands in.
-  if (not reqLevel or reqLevel <= 0) and item.subClassID == SCROLL_SUBCLASS then
-    reqLevel = item.itemLevel
+  local reqLevel = MakeSpace.Verdict.ConsumableLevel(item)
+  if not reqLevel then return nil end
+  local cutoff = outleveledCutoff(state.level or 1)
+  if MakeSpace.Verdict.ConsumableKind(item) and not item.betterInBags then
+    cutoff = math.min(cutoff, (state.level or 1) - NO_BETTER_GAP)
   end
-  if not reqLevel or reqLevel <= 0 then return nil end
-  if reqLevel + OUTLEVELED_GAP > (state.level or 1) then return nil end
-  return yellow("low_level_consumable", CONSUMABLE_NOUNS[item.subClassID], reqLevel, state.level or 1)
+  if reqLevel > cutoff then return nil end
+  return yellow("low_level_consumable", CONSUMABLE_NOUNS[item.subClassID], reqLevel, state.level or 1,
+    betterPotion(item, state))
 end
 
 local COMMON_QUALITY = 1
@@ -1441,13 +1584,17 @@ function MakeSpace.Verdict.Evaluate(item, state)
     if verdict then return verdict, reason, nil, nil, "item_hint", heading end
     verdict, reason, _, _, heading = evaluateOpenable(item, state)
     if verdict then return verdict, reason, nil, nil, "openable", heading end
+    local classRule = "mana_consumable"
     verdict, reason, _, _, heading = evaluateManaConsumable(item, state)
+    if not verdict then
+      verdict, reason, _, _, heading = evaluateUselessStatScroll(item, state)
+      classRule = "useless_stat_scroll"
+    end
     if verdict then
-      -- Mana potions sell well: show the price line when the auction pays more,
-      -- and drop "May sell at the auction house" from the reason when it does not.
-      local note, notWorth, noteIsLive = Auction.PriceLine(item, state)
-      if notWorth then reason = reason:gsub("%. May sell at the auction house$", "") end
-      return verdict, reason, nil, nil, "mana_consumable", heading, note, nil, noteIsLive
+      -- These sell well: show the price line when the auction pays more, trusting
+      -- a live Auctionator price only when it has held steady.
+      local note, _, noteIsLive = Auction.SteadyPriceLine(item, state)
+      return verdict, reason, nil, nil, classRule, heading, note, nil, noteIsLive
     end
     verdict, reason, _, _, heading = evaluateOutleveledConsumable(item, state)
     if not verdict then return nil end

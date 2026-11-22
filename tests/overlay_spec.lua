@@ -741,12 +741,13 @@ describe("Loot banner", function()
     function frame:CreateFontString()
       local text = { value = nil }
       function text:SetPoint() end
-      function text:SetWidth() end
+      function text:SetWordWrap(wrap) self.wrap = wrap end
       function text:SetText(value) self.value = value end
-      function text:GetStringHeight() return 14 end
+      function text:GetStringWidth() return 300 end
       return text
     end
     function frame:ClearAllPoints() end
+    function frame:SetWidth(width) self.width = width end
     function frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
     function frame:Show() self.shown = true end
     function frame:Hide() self.shown = false end
@@ -775,6 +776,37 @@ describe("Loot banner", function()
     tearDown()
   end)
 
+  it("stays on one line and grows to fit the text, up to a limit", function()
+    local frame = install({ active = true, deletes = 1, leaving = 0 })
+    MakeSpace.Overlay.UpdateBanner()
+    assert.are.equal(false, frame().text.wrap)
+    assert.are.equal(324, frame().width)
+    tearDown()
+  end)
+
+  it("gives way to the delete button while the loot window is open", function()
+    local frame = install({ active = true, deletes = 2, leaving = 0 })
+    _G.LootFrame = { IsShown = function() return true end }
+    MakeSpace.Overlay.UpdateBanner()
+    assert.is_truthy(not frame().shown)
+    tearDown()
+  end)
+
+  it("still tells you what to delete when there is no loot window to hang a button on", function()
+    local frame = install({ active = true, deletes = 2, leaving = 0 })
+    MakeSpace.Overlay.UpdateBanner()
+    assert.is_truthy(frame().shown)
+    tearDown()
+  end)
+
+  it("keeps explaining when there is nothing to click, loot window open", function()
+    local frame = install({ active = true, deletes = 0, leaving = 1 })
+    _G.LootFrame = { IsShown = function() return true end }
+    MakeSpace.Overlay.UpdateBanner()
+    assert.is_truthy(frame().shown)
+    tearDown()
+  end)
+
   it("hides again once the plan is over", function()
     local frame = install({ active = true, deletes = 1, leaving = 0 })
     MakeSpace.Overlay.UpdateBanner()
@@ -785,7 +817,7 @@ describe("Loot banner", function()
   end)
 
   it("sits above the loot window when it is open", function()
-    local frame = install({ active = true, deletes = 1, leaving = 0 })
+    local frame = install({ active = true, deletes = 0, leaving = 1 })
     _G.LootFrame = { IsShown = function() return true end }
     frame().points = {}
     MakeSpace.Overlay.UpdateBanner()
