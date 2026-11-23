@@ -1,13 +1,9 @@
 --- Which auction prices apply to this player.
---
--- The price data is kept per market: a region (us or eu) and a faction
--- (Alliance or Horde). A player reads only their own, so a Horde player on EU is
--- never judged by US or Alliance listings. This file is pure: the entry point
--- reads the realm, region and faction from the game and passes them in.
---
--- When the player's market is not in the data (an unknown region or faction),
--- Data.AuctionMarketMissing is set and verdict.lua refuses to call a tradable
--- item safe, because it cannot tell what the item sells for.
+-- Price data is kept per market: a region (us or eu) and a faction. A player reads
+-- only their own, so a Horde player on EU is never judged by US or Alliance listings.
+-- Pure: the entry point reads realm, region and faction and passes them in. When the
+-- market is not in the data, Data.AuctionMarketMissing is set and verdict.lua refuses
+-- to call a tradable item safe.
 MakeSpace = MakeSpace or {}
 MakeSpace.Market = {}
 

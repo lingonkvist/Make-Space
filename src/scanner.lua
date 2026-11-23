@@ -1,14 +1,11 @@
 -- MakeSpace: bag scanner
--- Iterates bag slots, gathers item info via WoW API, feeds each item
--- to the verdict engine, and caches results.
+-- Iterates bag slots, gathers item info via the WoW API, feeds each item to the verdict
+-- engine and caches the results.
 --
 -- TODO (Forever migration):
---   - Adopt `local addonName, ns = ...` namespace pattern across all files
---     instead of the `MakeSpace = MakeSpace or {}` global.
---   - GetItemInfo() may move to C_Item.GetItemInfo() returning a table
---     (fields accessed by name, not positional destructuring).
---   - Verify GetProfessions() / GetProfessionInfo() work on Forever;
---     if so, the Skills-tab fallback path can be removed.
+--   - Adopt `local addonName, ns = ...` instead of the `MakeSpace = MakeSpace or {}` global.
+--   - GetItemInfo() may move to C_Item.GetItemInfo() returning a table (fields by name).
+--   - If GetProfessions() / GetProfessionInfo() work on Forever, drop the Skills-tab fallback.
 
 MakeSpace = MakeSpace or {}
 MakeSpace.Scanner = {}
@@ -24,12 +21,9 @@ local slotResults = {}
 -- What the last scan found in your bags: dots and what the greens would fetch at a vendor.
 local lastSummary = { green = 0, yellow = 0, greenValue = 0 }
 
--- English profession name -> skillLine ID.
--- Only needs the professions referenced by VendorReagents, but we include
--- all Classic Era professions so the detected set is complete for future
--- rules.  Gathering professions have no vendor reagents today but detecting
--- them is free and harmless.
--- TODO: add locale tables keyed by GetLocale() if non-English support is needed.
+-- English profession name -> skillLine ID. Covers all Classic Era professions, so the
+-- detected set is complete for future rules (detecting the gathering ones is free).
+-- TODO: locale tables keyed by GetLocale() if non-English support is needed.
 local PROFESSION_NAME_TO_SKILL_LINE = {
   ["Alchemy"]        = 171,
   ["Blacksmithing"]  = 164,
@@ -46,14 +40,9 @@ local PROFESSION_NAME_TO_SKILL_LINE = {
 }
 
 --- Gather the player's profession skillLine IDs.
--- Returns a set-style table { [skillLineID] = true, ... } for fast lookup.
---
--- Strategy:
---   1. Try GetProfessions() + GetProfessionInfo() first (works in some
---      Classic builds, returns locale-independent skillLine IDs).
---   2. Fall back to GetNumSkillLines() + GetSkillLineInfo() which iterates
---      the Skills tab.  This returns profession NAMES (locale-dependent),
---      so we map them via PROFESSION_NAME_TO_SKILL_LINE.
+-- Strategy: try GetProfessions() + GetProfessionInfo() first (locale-independent IDs,
+-- works in some builds); fall back to GetNumSkillLines() + GetSkillLineInfo() over the
+-- Skills tab, which gives locale-dependent NAMES mapped via PROFESSION_NAME_TO_SKILL_LINE.
 -- @return table  Set of skillLine IDs the player currently has
 local function gatherProfessionSkillLines()
   local skillLines = {}
@@ -300,11 +289,10 @@ local EQUIP_SLOTS = {
   INVTYPE_TABARD         = true,
 }
 
--- equipSlot -> the character inventory slots an item of that type can occupy.
--- Shirts and tabards are cosmetic and left out. Rings and trinkets have two
--- slots. A one-hand weapon is compared with the main hand only: the off hand
--- is empty for anyone with a two-hander or a shield, and an empty slot would
--- make every one-hander look like an upgrade.
+-- equipSlot -> the inventory slots an item of that type can occupy. Shirts and tabards
+-- are left out. Rings and trinkets have two slots. A one-hand weapon is compared with
+-- the main hand only: the off hand is empty for anyone with a two-hander or a shield,
+-- and an empty slot would make every one-hander look like an upgrade.
 local INVENTORY_SLOTS = {
   INVTYPE_HEAD     = { 1 },
   INVTYPE_NECK     = { 2 },
@@ -353,15 +341,8 @@ local function equippedInSlotsFor(equipSlot)
   return worn
 end
 
---- Build the item table Verdict.Evaluate expects.
--- @param itemID        number
--- @param isBound       boolean  Soulbound right now (false for loot)
--- @param questInfo     table|nil  C_Container quest info for the slot
--- @param state         table    Player state from getPlayerState()
--- @param count         number|nil  Stack size (nil counts as 1)
--- @return table|nil  nil when the client hasn't cached the item yet
--- Classic Era calls it GetQuestInfo, newer clients GetTitleForQuestID, and a
--- client may have neither. A missing name must never stop a scan.
+-- Read a quest's title, or nil. Classic Era calls the lookup GetQuestInfo, newer clients
+-- GetTitleForQuestID, and a client may have neither; a missing name must never stop a scan.
 local function questTitle(questID)
   local lookup = C_QuestLog and (C_QuestLog.GetTitleForQuestID or C_QuestLog.GetQuestInfo)
   if not lookup then return nil end
@@ -378,6 +359,13 @@ local function questFinished(questID)
   return C_QuestLog.IsQuestFlaggedCompleted(questID) and true or false
 end
 
+--- Build the item table Verdict.Evaluate expects.
+-- @param itemID        number
+-- @param isBound       boolean  Soulbound right now (false for loot)
+-- @param questInfo     table|nil  C_Container quest info for the slot
+-- @param state         table    Player state from getPlayerState()
+-- @param count         number|nil  Stack size (nil counts as 1)
+-- @return table|nil  nil when the client hasn't cached the item yet
 local function buildItem(itemID, isBound, questInfo, state, count, hasLoot)
   local name, _, quality, itemLevel, reqLevel, _, _, maxStack,
   equipSlot, _, sellPrice, classID, subClassID, bindType = getItemInfo(itemID)
@@ -405,6 +393,7 @@ local function buildItem(itemID, isBound, questInfo, state, count, hasLoot)
   -- versions of a quest can never be completed from here.
   local questItemQuestIDs = MakeSpace.Data.QuestItems
       and MakeSpace.Data.QuestItems[itemID]
+  local otherFactionQuestsOnly = MakeSpace.Verdict.OnlyOtherFactionQuests(questItemQuestIDs, state.faction)
   if questItemQuestIDs then
     questItemQuestIDs = MakeSpace.Verdict.QuestsThatMatter(questItemQuestIDs,
         { faction = state.faction, class = state.playerClass, race = state.raceFile,
@@ -449,6 +438,7 @@ local function buildItem(itemID, isBound, questInfo, state, count, hasLoot)
     startsQuestCompleted = startsQuestCompleted,
     startsQuestName = startsQuestName,
     questItemQuestIDs = questItemQuestIDs,
+    otherFactionQuestsOnly = otherFactionQuestsOnly,
     allQuestObjectivesCompleted = allQuestObjectivesCompleted,
     openQuestIDs = openQuestIDs,
     onOpenQuest = onOpenQuest,
@@ -476,9 +466,8 @@ local function requiredSkillPattern()
 end
 
 --- Fill the one shared tooltip with a bag item and hand each line's text to
--- visit(content), from line `first` (line 1 is the item's name). The visitor
--- stops the walk by returning true. A line with no text is skipped, or given as
--- `blank` when that is set.
+-- visit(content), from line `first` (line 1 is the item's name). The visitor stops the
+-- walk by returning true. A line with no text is skipped, or given as `blank` if set.
 -- @return boolean  false when there is no tooltip to read (outside the game)
 local function eachTooltipLine(bag, slot, first, visit, blank)
   if not (CreateFrame and UIParent) then return false end
@@ -542,22 +531,27 @@ local function readHasEffect(bag, slot)
   return found
 end
 
+--- The first bag slot holding this item.
+-- @return number|nil bag, number|nil slot
+local function findInBags(itemID)
+  for bag = 0, MakeSpace.Bags.LastScanned() do
+    for slot = 1, C_Container.GetContainerNumSlots(bag) do
+      local info = C_Container.GetContainerItemInfo(bag, slot)
+      if info and info.itemID == itemID then return bag, slot end
+    end
+  end
+end
+
 --- The tooltip lines of an item in your bags, as the skill reader sees them, for
 -- /makespace why when a recipe's required skill was not found.
 -- @return table|nil list of strings
 function MakeSpace.Scanner.TooltipTextOf(itemID)
   if not (CreateFrame and UIParent and C_Container) then return nil end
-  for bag = 0, MakeSpace.Bags.LastScanned() do
-    for slot = 1, C_Container.GetContainerNumSlots(bag) do
-      local info = C_Container.GetContainerItemInfo(bag, slot)
-      if info and info.itemID == itemID then
-        local lines = {}
-        eachTooltipLine(bag, slot, 1, function(content) lines[#lines + 1] = content end, "?")
-        return lines
-      end
-    end
-  end
-  return nil
+  local bag, slot = findInBags(itemID)
+  if not bag then return nil end
+  local lines = {}
+  eachTooltipLine(bag, slot, 1, function(content) lines[#lines + 1] = content end, "?")
+  return lines
 end
 
 local RECIPE_CLASS_ID = 9
@@ -628,11 +622,10 @@ local function readHealAmount(bag, slot)
   return healed
 end
 
--- What an item's tooltip says never changes for the same item link, but reading
--- it (SetBagItem, then every line) is the dearest part of a scan, and a scan runs
--- on every loot and bag event. Keep each answer by kind and link. A tooltip the
--- client has not filled in yet ("Retrieving item information") is not kept, so
--- the answer is read again once the item is known.
+-- An item's tooltip never changes for the same link, but reading it (SetBagItem, then
+-- every line) is the dearest part of a scan, which runs on every loot and bag event. So
+-- each answer is kept by kind and link. A tooltip the client has not filled in yet
+-- ("Retrieving item information") is not kept: it is read again once the item is known.
 local tooltipFacts = {}
 
 local function tooltipIsFilledIn()
@@ -642,13 +635,31 @@ local function tooltipIsFilledIn()
   return not (text and _G.RETRIEVING_ITEM_INFO and text == _G.RETRIEVING_ITEM_INFO)
 end
 
-local function readTooltipOnce(kind, read, bag, slot, link)
+-- A "found nothing" answer can be early: the client fills in an item's spell lines
+-- (a Use effect) a little after the rest of the tooltip, most of all for an item it
+-- has not seen before. So a negative for something that may turn up late is read
+-- again on every scan for this long before it is kept.
+local NEGATIVE_RECHECK_SECONDS = 30
+
+local function clockSeconds()
+  return (_G.GetTime and _G.GetTime()) or (_G.time and _G.time()) or 0
+end
+
+local function readTooltipOnce(kind, read, bag, slot, link, mayAppearLate)
   if not link then return read(bag, slot) end
   local key = kind .. "|" .. link
   local kept = tooltipFacts[key]
-  if kept then return kept[1], kept[2], kept[3] end
+  if kept and not (kept.firstNegativeAt and clockSeconds() - kept.firstNegativeAt < NEGATIVE_RECHECK_SECONDS) then
+    return kept[1], kept[2], kept[3]
+  end
   local first, second, third = read(bag, slot)
-  if tooltipIsFilledIn() then tooltipFacts[key] = { first, second, third } end
+  if tooltipIsFilledIn() then
+    local entry = { first, second, third }
+    if mayAppearLate and not first then
+      entry.firstNegativeAt = kept and kept.firstNegativeAt or clockSeconds()
+    end
+    tooltipFacts[key] = entry
+  end
   return first, second, third
 end
 
@@ -670,7 +681,7 @@ local function gatherItem(bag, slot, state)
     item.livePrice, item.liveAge, item.liveSteady, item.stalePrice, item.staleAge = MakeSpace.Live.FreshPrice(item)
   end
   if item and item.isEquippable then
-    item.hasEffect = readTooltipOnce("effect", readHasEffect, bag, slot, item.link)
+    item.hasEffect = readTooltipOnce("effect", readHasEffect, bag, slot, item.link, true)
   end
   if item and item.classID == RECIPE_CLASS_ID then
     item.requiredSkill = readTooltipOnce("skill", readRequiredSkill, bag, slot, item.link)
@@ -714,11 +725,9 @@ local function equippedKey(item)
   return table.concat(parts, ",")
 end
 
---- Evaluate one item through the verdict cache.
--- Cache key includes bound state because the same itemID can be both
--- soulbound and not (a BoE you equipped plus another you bought). Verdicts
--- depend on isBound. Profession key is included because vendor reagent
--- verdicts depend on which professions the player currently has.
+--- Evaluate one item through the verdict cache. The key holds every field the verdict
+-- reads (the bound state, since one itemID can be both soulbound and not; the
+-- profession set, which vendor reagent verdicts depend on). Add any new one to it.
 local function evaluateCached(item, state, profKey)
   local cacheKey = item.id
       .. ":" .. tostring(item.isBound)
@@ -759,11 +768,13 @@ end
 -- How many gray items may show a green dot at once (the cheapest ones).
 local MAX_POOR_QUALITY_DOTS = 1
 
---- Free slots in a regular bag. Quivers, ammo pouches and profession bags only
--- take their own kind of item, so their empty slots are not room for loot.
+--- Free slots in a general bag, or nil for a bag that only takes its own kind of
+-- item (quiver, ammo pouch, profession bag, reagent bag): its empty slots are not
+-- room for loot, and deleting from it frees none.
 local function generalFreeSlots(bag)
+  if bag > (NUM_BAG_SLOTS or 4) then return nil end
   local free, bagType = C_Container.GetContainerNumFreeSlots(bag)
-  if bagType and bagType ~= 0 then return 0 end
+  if bagType and bagType ~= 0 then return nil end
   return free or 0
 end
 
@@ -785,30 +796,12 @@ function MakeSpace.Scanner.LastError()
 end
 
 --- Scan all bag slots, evaluate verdicts, store results.
-local function scanAllSlots()
-  local state = getPlayerState()
-  local profKey = professionCacheKey(state)
-
-  -- Clear slot results, we're rebuilding from scratch
-  slotResults = {}
-  lastScanError = nil
-  local poorQuality = {}
-  local poorQualityBank = {} -- thinned on their own: bank grays must not take a bag gray's dot
-  local junkEntries = {}
-  local junkCandidates = {}
-  local freeSlots = 0
-  local stackRoom = {} -- itemID -> how many more fit in the stacks you carry
-  local regularBags = NUM_BAG_SLOTS or 4
-
-  local bagsToScan = {}
-  for bag = 0, MakeSpace.Bags.LastScanned() do bagsToScan[#bagsToScan + 1] = bag end
-  for _, bag in ipairs(MakeSpace.Bags.BankBags()) do bagsToScan[#bagsToScan + 1] = bag end
-
-  -- Read every slot first: whether a food or scroll is spare depends on what
-  -- else you carry (a better one of its kind that you can already use).
-  local gatheredItems = {}
-  local carriedItems = {}
-  for _, bag in ipairs(bagsToScan) do
+-- Read every slot first: whether a food or scroll is spare depends on what else
+-- you carry (a better one of its kind that you can already use).
+-- @return table  "bag:slot" -> item, or false for an empty or unreadable slot
+local function readAllSlots(bags, state)
+  local items, carriedItems = {}, {}
+  for _, bag in ipairs(bags) do
     local carried = MakeSpace.Bags.IsCarried(bag)
     for slot = 1, C_Container.GetContainerNumSlots(bag) do
       -- One item that fails must not take every other dot with it.
@@ -817,83 +810,44 @@ local function scanAllSlots()
         lastScanError = "bag " .. bag .. " slot " .. slot .. ": " .. tostring(item)
         item = nil
       end
-      gatheredItems[bag .. ":" .. slot] = item or false
+      items[bag .. ":" .. slot] = item or false
       if item and carried then carriedItems[#carriedItems + 1] = item end
     end
   end
   MakeSpace.Verdict.MarkBetterInBags(carriedItems, state.level)
+  return items
+end
 
-  for _, bag in ipairs(bagsToScan) do
-    local carried = MakeSpace.Bags.IsCarried(bag)
-    if carried and bag <= regularBags then freeSlots = freeSlots + generalFreeSlots(bag) end
+local function grayEntry(key, bag, slot, item, result)
+  return { key = key, bag = bag, slot = slot,
+           value = (item.sellPrice or 0) * (item.count or 1), verdict = result.verdict }
+end
 
-    local numSlots = C_Container.GetContainerNumSlots(bag)
-    for slot = 1, numSlots do
-      local key = bag .. ":" .. slot
-      local item = gatheredItems[key] or nil
-
-      if item and not carried then
-        -- Banked on purpose, maybe for an alt: see Verdict.ForBank.
-        slotResults[key] = MakeSpace.Verdict.ForBank(evaluateCached(item, state, profKey),
-            MakeSpace.Bags.IsWarbandBank(bag))
-        if slotResults[key] and slotResults[key].tag == MakeSpace.Verdict.POOR_QUALITY_TAG then
-          poorQualityBank[#poorQualityBank + 1] = {
-            key = key, bag = bag, slot = slot,
-            value = (item.sellPrice or 0) * (item.count or 1),
-            verdict = slotResults[key].verdict,
-          }
-        end
-      elseif item then
-        local maxStack = item.maxStack or 1
-        if maxStack > 1 and (item.count or 1) < maxStack then
-          stackRoom[item.id] = (stackRoom[item.id] or 0) + maxStack - (item.count or 1)
-        end
-        slotResults[key] = evaluateCached(item, state, profKey)
-        junkCandidates[#junkCandidates + 1] = {
-          key = key, bag = bag, slot = slot, item = item,
-          value = MakeSpace.MakeRoom.ValueOf(item.sellPrice, item.count),
-          -- What it fetches when sold the better way, for weighing against loot.
-          weighed = MakeSpace.MakeRoom.ValueOf(MakeSpace.Auction.SteadyValue(item), item.count),
-        }
-        if slotResults[key].tag == MakeSpace.Verdict.POOR_QUALITY_TAG then
-          poorQuality[#poorQuality + 1] = {
-            key = key, bag = bag, slot = slot,
-            value = (item.sellPrice or 0) * (item.count or 1),
-            verdict = slotResults[key].verdict,
-          }
-        end
-      else
-        slotResults[key] = nil
-      end
+-- Only the cheapest gray(s) keep their dot. The cached result is shared between
+-- slots, so silence them with a fresh table instead of editing it.
+local function thinGrays(grays)
+  local silenced = MakeSpace.Verdict.SilenceAllButCheapest(grays, MAX_POOR_QUALITY_DOTS)
+  for _, entry in ipairs(grays) do
+    if silenced[entry.key] then
+      slotResults[entry.key] = {}
+    else
+      local original = slotResults[entry.key]
+      local reason, heading = MakeSpace.Verdict.PoorQualityReason(entry.value, entry.verdict == "yellow")
+      slotResults[entry.key] = {
+        verdict = entry.verdict,
+        reason = reason,
+        heading = heading,
+        tag = MakeSpace.Verdict.POOR_QUALITY_TAG,
+        detail = original.detail,
+        rule = original.rule,
+        sellable = original.sellable,
+      }
     end
   end
+end
 
-  -- Only the cheapest gray(s) keep their dot. The cached result is shared
-  -- between slots, so silence them with a fresh table instead of editing it.
-  -- The bank is thinned the same way, apart from the bags.
-  for _, grays in ipairs({ poorQuality, poorQualityBank }) do
-    local silenced = MakeSpace.Verdict.SilenceAllButCheapest(grays, MAX_POOR_QUALITY_DOTS)
-    for _, entry in ipairs(grays) do
-      if silenced[entry.key] then
-        slotResults[entry.key] = {}
-      else
-        local original = slotResults[entry.key]
-        local reason, heading = MakeSpace.Verdict.PoorQualityReason(entry.value, entry.verdict == "yellow")
-        slotResults[entry.key] = {
-          verdict = entry.verdict,
-          reason = reason,
-          heading = heading,
-          tag = MakeSpace.Verdict.POOR_QUALITY_TAG,
-          detail = original.detail,
-          rule = original.rule,
-          sellable = original.sellable,
-        }
-      end
-    end
-  end
-
-  -- Making room for loot runs last, on the final results.
-  lootPlan = { take = {}, deletes = {}, active = false }
+-- Count the dots in your bags and what the green ones would sell for.
+local function summarizeBags(junkCandidates)
   lastSummary = { green = 0, yellow = 0, greenValue = 0 }
   for _, candidate in ipairs(junkCandidates) do
     local result = slotResults[candidate.key]
@@ -906,12 +860,18 @@ local function scanAllSlots()
       end
     end
   end
+end
+
+-- Making room for loot runs last, on the final results.
+local function planMakeRoom(junkCandidates, stackRoom, freeSlots)
+  lootPlan = { take = {}, deletes = {}, active = false }
   lastFreeSlots, lastJunkCount = freeSlots, 0
   lastCheapestJunk = nil
   if #lootPieces == 0 then return end
 
+  local junkEntries = {}
   for _, candidate in ipairs(junkCandidates) do
-    if MakeSpace.MakeRoom.IsJunkCandidate(candidate.item, slotResults[candidate.key]) then
+    if candidate.general and MakeSpace.MakeRoom.IsJunkCandidate(candidate.item, slotResults[candidate.key]) then
       -- Ranked by what it would fetch, so a gray-looking item that sells well
       -- at auction is not the one offered for deletion.
       junkEntries[#junkEntries + 1] = {
@@ -954,6 +914,68 @@ local function scanAllSlots()
     slotResults[entry.key] = MakeSpace.MakeRoom.MarkedResult(
       MakeSpace.MakeRoom.RestoreResult(slotResults[entry.key]), entry.value)
   end
+end
+
+local function scanAllSlots()
+  local state = getPlayerState()
+  local profKey = professionCacheKey(state)
+
+  -- Clear slot results, we're rebuilding from scratch
+  slotResults = {}
+  lastScanError = nil
+  local poorQuality = {}
+  local poorQualityBank = {} -- thinned on their own: bank grays must not take a bag gray's dot
+  local junkCandidates = {}
+  local freeSlots = 0
+  local stackRoom = {} -- itemID -> how many more fit in the stacks you carry
+
+  local bagsToScan = {}
+  for bag = 0, MakeSpace.Bags.LastScanned() do bagsToScan[#bagsToScan + 1] = bag end
+  for _, bag in ipairs(MakeSpace.Bags.BankBags()) do bagsToScan[#bagsToScan + 1] = bag end
+  local gatheredItems = readAllSlots(bagsToScan, state)
+
+  for _, bag in ipairs(bagsToScan) do
+    local carried = MakeSpace.Bags.IsCarried(bag)
+    local generalFree = carried and generalFreeSlots(bag)
+    if generalFree then freeSlots = freeSlots + generalFree end
+
+    for slot = 1, C_Container.GetContainerNumSlots(bag) do
+      local key = bag .. ":" .. slot
+      local item = gatheredItems[key]
+
+      if item and not carried then
+        -- Banked on purpose, maybe for an alt: see Verdict.ForBank.
+        local result = MakeSpace.Verdict.ForBank(evaluateCached(item, state, profKey),
+            MakeSpace.Bags.IsWarbandBank(bag))
+        slotResults[key] = result
+        if result and result.tag == MakeSpace.Verdict.POOR_QUALITY_TAG then
+          poorQualityBank[#poorQualityBank + 1] = grayEntry(key, bag, slot, item, result)
+        end
+      elseif item then
+        local maxStack = item.maxStack or 1
+        if maxStack > 1 and (item.count or 1) < maxStack then
+          stackRoom[item.id] = (stackRoom[item.id] or 0) + maxStack - (item.count or 1)
+        end
+        local result = evaluateCached(item, state, profKey)
+        slotResults[key] = result
+        junkCandidates[#junkCandidates + 1] = {
+          key = key, bag = bag, slot = slot, item = item, general = generalFree and true or false,
+          value = MakeSpace.MakeRoom.ValueOf(item.sellPrice, item.count),
+          -- What it fetches when sold the better way, for weighing against loot.
+          weighed = MakeSpace.MakeRoom.ValueOf(MakeSpace.Auction.SteadyValue(item), item.count),
+        }
+        if result.tag == MakeSpace.Verdict.POOR_QUALITY_TAG then
+          poorQuality[#poorQuality + 1] = grayEntry(key, bag, slot, item, result)
+        end
+      end
+    end
+  end
+
+  -- The bank is thinned the same way, apart from the bags.
+  thinGrays(poorQuality)
+  thinGrays(poorQualityBank)
+  summarizeBags(junkCandidates)
+  planMakeRoom(junkCandidates, stackRoom, freeSlots)
 end
 
 -- Bag addons only need telling when something MakeSpace would draw changed, so
@@ -1022,9 +1044,9 @@ end
 local UNNEEDED_REAGENT_RULES = { outleveled_reagent = true, other_profession_reagent = true }
 
 -- The item as the verdict rules see it, for a loot slot.
-local function lootItem(itemID, link)
+local function lootItem(itemID, link, opensForLoot)
   local state = getPlayerState()
-  local item = buildItem(itemID, false, nil, state, nil, false)
+  local item = buildItem(itemID, false, nil, state, nil, opensForLoot)
   if not item then return nil end
   item.bonusKey = MakeSpace.Auction.BonusKey(link)
   item.link = link
@@ -1197,12 +1219,8 @@ function MakeSpace.Scanner.LootDecision(slot)
   return "leave"
 end
 
---- Get the verdict for a specific bag slot.
--- @param bag   number  Bag index (0-4)
--- @param slot  number  Slot index (1-N)
--- @return table|nil  { verdict = "green"/"yellow"/nil, reason = "..." }
---- Mark the first occupied slot as "delete me" without any loot window, so the
--- glow can be checked on its own. The next real scan puts things back.
+--- Mark the first occupied slot as "delete me" without any loot window, so the glow
+-- can be checked on its own. The next real scan puts things back.
 -- @return string|nil  "bag:slot" that was marked
 function MakeSpace.Scanner.ForceTestGlow()
   for bag = 0, MakeSpace.Bags.LastScanned() do
@@ -1223,6 +1241,10 @@ function MakeSpace.Scanner.Summary()
   return { green = lastSummary.green, yellow = lastSummary.yellow, greenValue = lastSummary.greenValue }
 end
 
+--- Get the verdict for a specific bag slot.
+-- @param bag   number  Bag index (0-4)
+-- @param slot  number  Slot index (1-N)
+-- @return table|nil  { verdict = "green"/"yellow"/nil, reason = "..." }
 function MakeSpace.Scanner.GetResult(bag, slot)
   return slotResults[bag .. ":" .. slot]
 end
@@ -1371,12 +1393,8 @@ end
 -- @param itemID number
 -- @return table|nil  { verdict, reason, detail }, or nil until the client has the item
 function MakeSpace.Scanner.EvaluateItem(itemID, opensForLoot, link)
-  local state = getPlayerState()
-  local item = buildItem(itemID, false, nil, state, nil, opensForLoot)
+  local item, state = lootItem(itemID, link, opensForLoot)
   if not item then return nil end
-  item.bonusKey = MakeSpace.Auction.BonusKey(link)
-  item.link = link
-  item.livePrice, item.liveAge, item.liveSteady, item.stalePrice, item.staleAge = MakeSpace.Live.FreshPrice(item)
   return evaluateCached(item, state, professionCacheKey(state))
 end
 
@@ -1387,19 +1405,9 @@ function MakeSpace.Scanner.Explain(itemID)
 
   -- Judge the item as it sits in your bags when you carry one: soulbound,
   -- stack size, openable and quest-starter state all come from the real slot.
-  local fromBag = false
-  local item
-  for bag = 0, MakeSpace.Bags.LastScanned() do
-    for slot = 1, C_Container.GetContainerNumSlots(bag) do
-      local info = C_Container.GetContainerItemInfo(bag, slot)
-      if info and info.itemID == itemID then
-        item = gatherItem(bag, slot, state)
-        fromBag = item ~= nil
-        break
-      end
-    end
-    if item then break end
-  end
+  local bag, slot = findInBags(itemID)
+  local item = bag and gatherItem(bag, slot, state)
+  local fromBag = item ~= nil
   item = item or buildItem(itemID, false, nil, state)
   if not item then return nil end
 

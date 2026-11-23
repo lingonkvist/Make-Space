@@ -36,10 +36,8 @@ end
 -- A bank tab the client draws that MakeSpace did not know about: scan it.
 MakeSpace.Bags.onNewBankBag = function() rescanSoon() end
 
--- Auctionator keeps its prices in a database it fills while the auction house is
--- open (a scan, a search, listing something). Nothing tells MakeSpace, so the dots
--- would keep the old verdicts until the bags next changed. Hook the point where a
--- price is stored and rescan a moment after, once per burst.
+-- Auctionator fills its price database while the auction house is open and nothing
+-- tells us, so hook where a price is stored and rescan shortly after, once per burst.
 local AUCTION_PRICES_RESCAN_DELAY_SECONDS = 2
 local auctionPricesPending = false
 local auctionatorHooked = false
@@ -78,10 +76,22 @@ local function onPlayerLevelUp()
   C_Timer.After(LEVEL_UP_RESCAN_DELAY_SECONDS, invalidateAndRescan)
 end
 
--- Loot window: read what is in it, work out what is worth a slot, repaint.
--- LOOT_SLOT_CLEARED carries the slot that was just taken. The client can still
--- report the item for that slot, and Blizzard re-lays the rows after the event,
--- so the loot dots are repainted once now and once on the next frame.
+-- Loot window: read it, work out what is worth a slot, repaint. LOOT_SLOT_CLEARED
+-- carries the slot just taken; the client may still report its item and Blizzard
+-- re-lays the rows after the event, so repaint now and on the next frame.
+-- Fast-loot addons fire a burst of these events in one frame: the first does the
+-- full rescan, the rest only note it and the next-frame pass covers them.
+local lootStats = { events = 0, scans = 0, lastScanMs = nil }
+MakeSpace.LootStats = lootStats
+local lootRepaintQueued, lootEventsWaiting = false, false
+
+local function timedRescan()
+  local started = debugprofilestop and debugprofilestop()
+  rescanAll()
+  lootStats.scans = lootStats.scans + 1
+  if started then lootStats.lastScanMs = debugprofilestop() - started end
+end
+
 local function onLootChanged(self, clearedSlot)
   local hadLoot = MakeSpace.Scanner.HasLoot()
   MakeSpace.Scanner.RefreshLoot(clearedSlot)
@@ -89,19 +99,38 @@ local function onLootChanged(self, clearedSlot)
   -- and there is no plan to make, so a full scan would only cost time. This is
   -- most loot windows when farming.
   if not (hadLoot or MakeSpace.Scanner.HasLoot()) then return end
-  rescanAll() -- repaints the loot window itself while loot remains
+  lootStats.events = lootStats.events + 1
   if not MakeSpace.Scanner.HasLoot() then
     -- Last item taken: bring the banner and button down, nothing more to lay out.
+    timedRescan()
     MakeSpace.Overlay.UpdateLoot()
-  elseif C_Timer and C_Timer.After then
-    C_Timer.After(0, function() MakeSpace.Overlay.UpdateLoot() end)
+    return
+  end
+  if lootRepaintQueued then
+    lootEventsWaiting = true
+    return
+  end
+  timedRescan() -- repaints the loot window itself while loot remains
+  if C_Timer and C_Timer.After then
+    lootRepaintQueued = true
+    C_Timer.After(0, function()
+      lootRepaintQueued = false
+      if lootEventsWaiting then
+        lootEventsWaiting = false
+        timedRescan()
+      end
+      MakeSpace.Overlay.UpdateLoot()
+    end)
   end
 end
 
--- The bags are never opened from here: with Forever's gamepad UI on, the game
--- blocks addon code that opens them, and the banner already names what to
--- delete. The marks show whenever you open your bags yourself.
-local onLootOpened = onLootChanged
+-- The bags are never opened from here (Forever's gamepad UI blocks addon code that
+-- does); the banner names what to delete. LOOT_OPENED's first argument is the
+-- auto-loot flag, not a cleared slot.
+local function onLootOpened(self)
+  lootStats.events, lootStats.scans, lootStats.lastScanMs = 0, 0, nil
+  onLootChanged(self, nil)
+end
 
 local function onLootClosed()
   local hadLoot = MakeSpace.Scanner.HasLoot()
@@ -153,10 +182,9 @@ local function onPlayerLogin(self)
     pcall(self.RegisterEvent, self, bankEvent)
   end
 
-  -- Hook bag frame Show so dots appear when bags open.
-  -- Frame pool is shared (NUM_CONTAINER_FRAMES = 13), and any
-  -- frame can hold any bag, so hook them all.
-  -- Includes the combined-bags frame on Forever and EllesmereUI Bags.
+  -- Hook every bag frame's Show so dots appear when bags open: the frame pool is
+  -- shared, any frame can hold any bag. Includes the combined-bags frame and
+  -- EllesmereUI Bags.
   for _, bagFrame in ipairs(MakeSpace.Overlay.BagWindows()) do
     bagFrame:HookScript("OnShow", rescanAll)
   end

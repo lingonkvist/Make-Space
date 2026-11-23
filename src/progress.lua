@@ -1,9 +1,7 @@
 -- MakeSpace: is a profession actually being leveled?
---
--- A recipe a little out of reach is worth keeping while you are working on
--- that profession, and clutter when you are not. This remembers each
--- profession's skill rank, when it last moved, and whether a play session has
--- passed since without it moving.
+-- A recipe a little out of reach is worth keeping while you work on that profession
+-- and clutter when you do not. Remembers each profession's skill rank, when it last
+-- moved, and whether a play session has passed without it moving.
 -- Pure bookkeeping: the caller hands in the saved table and the time.
 
 MakeSpace = MakeSpace or {}
@@ -19,7 +17,7 @@ local sessionSeen = {} -- profession name -> true once counted this session
 
 --- Record the current ranks.
 -- @param store table  saved table, name -> { rank, quiet, seen }
--- @param ranks table  profession name -> current rank (nil ranks skipped)
+-- @param ranks table  profession name -> rank (nil ranks skipped)
 -- @param now number   seconds, any steady clock
 function MakeSpace.Progress.Observe(store, ranks, now)
   for name, rank in pairs(ranks) do

@@ -130,7 +130,7 @@ local LOOT_TAKE_LINE = LOOT_CHECK_ICON .. "Take it"
 local LOOT_CONSIDER_DETAIL = "May be needed"
 local LOOT_LEAVE_REASON = "Not worth a slot"
 local LOOT_NOROOM_REASON = "Nothing safe to delete"
-local LOOT_NOROOM_HEADING = { title = "Make room first", detail = "Nothing safe to delete" }
+local LOOT_NOROOM_HEADING = { title = "Make room first", detail = LOOT_NOROOM_REASON }
 
 -- Name the junk the loot lost to, so the comparison is visible:
 -- "Worth less than Odd Bauble (8s)", item and coins coloured.
@@ -225,24 +225,22 @@ local function colorCoins(text)
   end))
 end
 
-local function addLine(tooltip, text, r, g, b)
-  tooltip:AddLine(colorCoins(text), r, g, b)
+local function addLine(tooltip, text, color)
+  tooltip:AddLine(colorCoins(text), color.r, color.g, color.b)
 end
 
 -- The price line stays even with Auctionator installed: MakeSpace's number is
--- its own judgement (an average, or the snapshot) and it is what makes the
--- "may sell at the auction house" hint, or a missing dot, make sense.
+-- its own judgement (an average, or the snapshot) and it is what makes a hint that
+-- suggests the auction house, or a missing dot, make sense.
 local function addPriceNote(tooltip, result)
   -- A stack worth next to nothing says so in its reason; a vendor price under "Safe to delete" would send mixed signals.
   if not (result and result.auctionNote) or result.worthLittle then return end
-  addLine(tooltip, result.auctionNote, INFO_COLOR.r, INFO_COLOR.g, INFO_COLOR.b)
+  addLine(tooltip, result.auctionNote, INFO_COLOR)
 end
 
--- The profession rows as the verdict judges them: recipes that take the item
--- directly plus those that take something made from it (Heavy Stone is a
--- Blacksmithing 100 reagent, but its sharpening stones reach 240). Only one
--- conversion deep: the line says where professions start using an item, not
--- everything several crafts further on. Positional
+-- The profession rows as the verdict judges them: recipes that take the item directly
+-- plus those that take something made from it (Heavy Stone is a Blacksmithing 100
+-- reagent, but its sharpening stones reach 240). Only one conversion deep. Positional,
 -- like the generated data, so the rest of the rendering is unchanged.
 local function mergedProfessionEntries(itemID, profEntries, myProfs)
   local verdict = MakeSpace.Verdict
@@ -296,7 +294,7 @@ local function renderProfessionDetails(tooltip, profEntries, itemID)
       text = text .. " " .. suffix
     end
 
-    addLine(tooltip, text, INFO_COLOR.r, INFO_COLOR.g, INFO_COLOR.b)
+    addLine(tooltip, text, INFO_COLOR)
   end
 end
 
@@ -352,21 +350,19 @@ local function renderQuestDetails(tooltip, questIDs)
     if i == QUEST_DETAIL_LIMIT and #unique > QUEST_DETAIL_LIMIT then
       text = text .. " +" .. (#unique - QUEST_DETAIL_LIMIT)
     end
-    addLine(tooltip, text, INFO_COLOR.r, INFO_COLOR.g, INFO_COLOR.b)
+    addLine(tooltip, text, INFO_COLOR)
     shown = shown + 1
   end
   return shown
 end
 
--- One row about the quests that want a reagent, for the tooltip of an item that
--- has recipe uses. Only the quests that could keep it count: not repeatable ones
--- (they want the item for good, so they would be on every row), quests far below
--- your level, or ones you have finished.
---   A quest in your log: "In log: Name", for any reagent. This is the case
---   where the row decides something.
---   No quest in your log: "[level] Name (Zone)" in grey, only for a reagent
---   few recipes use. A common material (copper bars, linen) is wanted by some
---   quest somewhere and would carry the row for good.
+-- One row about the quests that want a reagent, for an item with recipe uses. Only
+-- quests that could keep it count: not repeatable ones (they would be on every row),
+-- quests far below your level, or finished ones.
+--   A quest in your log: "In log: Name", for any reagent (the row decides something).
+--   No quest in your log: "[level] Name (Zone)" in grey, only for a reagent few recipes
+--   use: a common material (copper bars, linen) is wanted by some quest somewhere and
+--   would carry the row for good.
 -- @return string|nil text
 -- @return boolean|nil inLog  true when the row is about a quest in your log
 local QUEST_ROW_MAX = 46
@@ -423,7 +419,7 @@ end
 
 local function addQuestRow(tooltip, row, inLog)
   local color = inLog and INFO_COLOR or MUTED_COLOR
-  addLine(tooltip, row, color.r, color.g, color.b)
+  addLine(tooltip, row, color)
 end
 
 local VERDICT_LINE_WRAP = 45
@@ -431,17 +427,11 @@ local VERDICT_LINE_WRAP = 45
 -- The header names the verdict in words, so it never depends on color alone.
 -- In a bag green means you can delete it; in the loot window the item is not
 -- yours yet, so green says you don't need it.
-local BAG_HEADINGS = {
-  green  = "Safe to delete",
-}
+local BAG_GREEN = "Safe to delete"
 -- A green on something a vendor will buy says so, since selling beats
 -- destroying when there is a vendor around.
-local BAG_HEADINGS_VENDOR = {
-  green  = "Safe to vendor",
-}
-local LOOT_HEADINGS = {
-  green  = "Not needed",
-}
+local BAG_GREEN_VENDOR = "Safe to vendor"
+local LOOT_GREEN = "Not needed"
 
 -- The pop-out you get from clicking an item link in chat. The item is not in
 -- your bags, so it gets the general info rows and no verdict.
@@ -451,22 +441,20 @@ local function isLinkTooltip(tooltip)
 end
 
 -- With full bags and loot that loses to your junk, the header says it outright.
-local LOOT_LEAVE_HEADINGS = {
-  green  = "Skip it",
-}
+local LOOT_LEAVE_GREEN = "Skip it"
 
 local function dotEscape(verdict)
   return "|T" .. DOT_TEXTURES[verdict] .. ":" .. DOT_ESCAPE_SIZE .. ":" .. DOT_ESCAPE_SIZE .. "|t"
 end
 
-local function renderVerdict(tooltip, verdict, reason, headings, keepWhole, specific, hasPriceLine)
+local function renderVerdict(tooltip, verdict, reason, greenHeading, keepWhole, specific, hasPriceLine)
   local color = VERDICT_COLORS[verdict]
   if not reason then return end
 
   -- A yellow that comes with its own heading (the rule's words, 3-4 of them) is
   -- named by what was found with the detail underneath. A yellow without one
   -- (the slot picked to make room) is named by its own reason.
-  local heading = headings[verdict]
+  local heading = greenHeading
   if verdict == "yellow" then
     if specific then
       heading, reason = specific.title, specific.detail
@@ -475,7 +463,7 @@ local function renderVerdict(tooltip, verdict, reason, headings, keepWhole, spec
     end
   end
 
-  addLine(tooltip, dotEscape(verdict) .. " " .. heading, color.r, color.g, color.b)
+  addLine(tooltip, dotEscape(verdict) .. " " .. heading, color)
   if not reason then return end
   -- "Worth very little" repeats what the price line right under the heading shows.
   if hasPriceLine and verdict == "green" and reason == MakeSpace.Verdict.WORTH_LITTLE_REASON then return end
@@ -483,7 +471,7 @@ local function renderVerdict(tooltip, verdict, reason, headings, keepWhole, spec
   -- A detail of two lines ("Heals 9%...", then "Best for you: ...") is already broken.
   if reason:find("\n", 1, true) then
     for part in reason:gmatch("[^\n]+") do
-      addLine(tooltip, part, DETAIL_COLOR.r, DETAIL_COLOR.g, DETAIL_COLOR.b)
+      addLine(tooltip, part, DETAIL_COLOR)
     end
     return
   end
@@ -493,14 +481,69 @@ local function renderVerdict(tooltip, verdict, reason, headings, keepWhole, spec
   if not keepWhole and #reason > VERDICT_LINE_WRAP then
     for i = VERDICT_LINE_WRAP, 1, -1 do
       if reason:sub(i, i) == "," then
-        addLine(tooltip, reason:sub(1, i), DETAIL_COLOR.r, DETAIL_COLOR.g, DETAIL_COLOR.b)
-        addLine(tooltip, reason:sub(i + 2), DETAIL_COLOR.r, DETAIL_COLOR.g, DETAIL_COLOR.b)
+        addLine(tooltip, reason:sub(1, i), DETAIL_COLOR)
+        addLine(tooltip, reason:sub(i + 2), DETAIL_COLOR)
         return
       end
     end
   end
 
-  addLine(tooltip, reason, DETAIL_COLOR.r, DETAIL_COLOR.g, DETAIL_COLOR.b)
+  addLine(tooltip, reason, DETAIL_COLOR)
+end
+
+-- Full bags: loot worth less than the junk you would delete is a skip. An item with its
+-- own verdict keeps it and gets the loot decision as an extra line, so the X (or the
+-- missing X) is always explained.
+-- @param shown table  { verdict, reason, heading, greenHeading }, adjusted in place
+-- @return string|nil  an extra line for the tooltip
+local function applyLootDecision(shown, decision, result)
+  if decision == "leave" then
+    shown.greenHeading = LOOT_LEAVE_GREEN
+    local leaveReason = lootLeaveReason()
+    -- A gray's own "sells for ..." line would only repeat the comparison, so the
+    -- skip reason replaces it.
+    local isGray = result and result.tag == MakeSpace.Verdict.POOR_QUALITY_TAG
+    if shown.verdict and not isGray then return leaveReason end
+    shown.verdict, shown.reason, shown.keepWhole = "green", leaveReason, true -- the comma sits inside the parentheses
+  elseif decision == "noroom" then
+    if shown.verdict then return LOOT_NOROOM_REASON end
+    shown.verdict, shown.reason, shown.heading = "yellow", LOOT_NOROOM_REASON, LOOT_NOROOM_HEADING
+  elseif (decision == "take" or decision == "consider") and shown.verdict == "green" then
+    -- The plan says take it, so the item's own "not needed" would contradict the
+    -- check mark and the "Take it" line. A yellow hint can stand beside them.
+    shown.verdict, shown.reason, shown.heading = nil, nil, nil
+  end
+end
+
+-- Only quests this player's faction can take: an Alliance quest on a Horde
+-- tooltip is noise, and the verdict already ignores it.
+local function questsForTooltip(itemID)
+  local questIDs = MakeSpace.Data.QuestItems and MakeSpace.Data.QuestItems[itemID]
+  if not questIDs then return nil end
+  local scanner = MakeSpace.Scanner
+  questIDs = MakeSpace.Verdict.QuestsThatMatter(questIDs,
+      scanner and scanner.QuestAudience and scanner.QuestAudience()
+      or (UnitFactionGroup and UnitFactionGroup("player")))
+  return #questIDs > 0 and questIDs or nil
+end
+
+-- The context rows of an item with no verdict: profession and/or quest rows, never
+-- more than two. A vendor reagent is cheap and repurchasable, so it gets none.
+local function renderContextRows(tooltip, itemID, profEntries, questIDs, isVendorReagent)
+  if profEntries and not isVendorReagent then
+    renderProfessionDetails(tooltip, profEntries, itemID)
+    local row, inLog
+    if questIDs then row, inLog = openQuestRow(questIDs, profEntries) end
+    if row then addQuestRow(tooltip, row, inLog) end
+  elseif questIDs and not isVendorReagent then
+    renderQuestDetails(tooltip, questIDs)
+  elseif MakeSpace.Data.ProtectedItems and MakeSpace.Data.ProtectedItems[itemID] then
+    addLine(tooltip, MakeSpace.Data.ProtectedItems[itemID], INFO_COLOR)
+  elseif not questIDs and isQuestItem(itemID) then
+    -- The one case that would otherwise say nothing at all: the game calls it a
+    -- quest item and the quest data has no quest for you that wants it.
+    addLine(tooltip, NO_QUEST_ROW, MUTED_COLOR)
+  end
 end
 
 function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
@@ -515,17 +558,17 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
   local itemID = tonumber(link:match("item:(%d+)"))
   if not itemID then return end
 
-  local result, headings
+  local result, greenHeading
   if isLootOwner(tooltip:GetOwner()) then
     -- Checked before the bag lookup: a loot row's ID could otherwise match a
     -- backpack slot holding the same item.
     result = MakeSpace.Scanner.EvaluateItem(itemID, tooltipSaysOpenable(tooltip), link)
-    headings = LOOT_HEADINGS
+    greenHeading = LOOT_GREEN
   elseif isLinkTooltip(tooltip) then
     -- An item link in chat gets the general blue info only (what it is used
     -- for, which quests need it), never a verdict: it is not your item.
     result = nil
-    headings = LOOT_HEADINGS
+    greenHeading = LOOT_GREEN
   else
     local bag, slot = bagSlotOf(tooltip)
     if not bag then
@@ -533,79 +576,34 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
       return
     end
     result = MakeSpace.Scanner.GetResult(bag, slot)
-    headings = BAG_HEADINGS
     -- A stack worth next to nothing is not worth a trip to the vendor: it says delete.
-    if result and result.sellable and not result.worthLittle then
-      headings = BAG_HEADINGS_VENDOR
-    end
+    greenHeading = (result and result.sellable and not result.worthLittle) and BAG_GREEN_VENDOR or BAG_GREEN
   end
-  local verdict = result and result.verdict
-  local reason = result and result.reason
-  local specificHeading = result and result.heading
+  local shown = { verdict = result and result.verdict, reason = result and result.reason,
+                  heading = result and result.heading, greenHeading = greenHeading }
   local lootSlot = isLootOwner(tooltip:GetOwner()) and lootSlotOf(tooltip:GetOwner())
   local lootDecision = lootSlot and MakeSpace.Scanner.LootDecision
       and MakeSpace.Scanner.LootDecision(lootSlot)
-  -- Full bags: loot worth less than the junk you would delete is a skip.
-  -- An item that already has its own verdict keeps it and gets the loot
-  -- decision as an extra line, so the X (or the missing X) is always explained.
-  local lootNote
-  local keepWhole = false
-  -- A gray's own "Poor quality, sells for ..." only repeats the comparison
-  -- the skip reason makes, so the skip reason replaces it.
-  if lootDecision == "leave" and verdict and result.tag == MakeSpace.Verdict.POOR_QUALITY_TAG then
-    verdict, reason = nil, nil
-  end
-  if lootDecision == "leave" then
-    headings = LOOT_LEAVE_HEADINGS
-    -- A gray's own "sells for ..." line would only repeat the comparison.
-    local isGray = result and result.tag == MakeSpace.Verdict.POOR_QUALITY_TAG
-    if verdict and not isGray then lootNote = lootLeaveReason() else
-      verdict, reason = "green", lootLeaveReason()
-      keepWhole = true -- the comma sits inside the parentheses
-    end
-  elseif lootDecision == "noroom" then
-    if verdict then lootNote = LOOT_NOROOM_REASON else
-      verdict, reason = "yellow", LOOT_NOROOM_REASON
-      specificHeading = LOOT_NOROOM_HEADING
-    end
-  elseif (lootDecision == "take" or lootDecision == "consider") and verdict == "green" then
-    -- The plan says take it, so the item's own "not needed" would contradict the
-    -- check mark and the "Take it" line. A yellow hint can stand beside them.
-    verdict, reason, specificHeading = nil, nil, nil
-  end
+  local lootNote = applyLootDecision(shown, lootDecision, result)
 
   local profEntries = MakeSpace.Data.ReagentProfessions
       and MakeSpace.Data.ReagentProfessions[itemID]
+  local questIDs = questsForTooltip(itemID)
+  local isVendorReagent = MakeSpace.Data.VendorReagents and MakeSpace.Data.VendorReagents[itemID]
 
-  -- Only quests this player's faction can take: an Alliance quest on a Horde
-  -- tooltip is noise, and the verdict already ignores it.
-  local questIDs = MakeSpace.Data.QuestItems
-      and MakeSpace.Data.QuestItems[itemID]
-  if questIDs then
-    local scanner = MakeSpace.Scanner
-    questIDs = MakeSpace.Verdict.QuestsThatMatter(questIDs,
-        scanner and scanner.QuestAudience and scanner.QuestAudience()
-        or (UnitFactionGroup and UnitFactionGroup("player")))
-    if #questIDs == 0 then questIDs = nil end
-  end
-
-  local protectedNote = MakeSpace.Data.ProtectedItems
-      and MakeSpace.Data.ProtectedItems[itemID]
-
-  if verdict then
-    renderVerdict(tooltip, verdict, reason, headings, keepWhole, specificHeading,
+  if shown.verdict then
+    renderVerdict(tooltip, shown.verdict, shown.reason, shown.greenHeading, shown.keepWhole, shown.heading,
         result and result.auctionNote ~= nil and not result.worthLittle)
     -- Quest-completed verdicts: show quest detail on a second line in info-blue.
     if result and result.detail then
-      addLine(tooltip, result.detail, INFO_COLOR.r, INFO_COLOR.g, INFO_COLOR.b)
+      addLine(tooltip, result.detail, INFO_COLOR)
     end
     -- Auctionator's tooltip already shows its own number right above: repeating it
     -- adds nothing. A price from the snapshot is Make Space's alone, so it stays.
     if not (result and result.auctionNoteLive) then addPriceNote(tooltip, result) end
     -- A reagent with a hint still says which quest wants it, so the hint and the
     -- reason to keep the item are side by side.
-    if profEntries and questIDs and not (MakeSpace.Data.VendorReagents
-        and MakeSpace.Data.VendorReagents[itemID]) then
+    if profEntries and questIDs and not isVendorReagent then
       local row, inLog = openQuestRow(questIDs, profEntries)
       if row then addQuestRow(tooltip, row, inLog) end
     end
@@ -613,36 +611,18 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
     -- An item that would have been green but sells for more at auction: say so,
     -- so the missing dot is not a mystery. One row, leaving room for one more.
     addPriceNote(tooltip, result)
-    -- No verdict: show context rows (profession and/or quest).
-    -- Design doc 4.3: never more than 2 detail rows total.
-    -- Skip all detail rows for vendor reagents (cheap, repurchasable).
-    local isVendorReagent = MakeSpace.Data.VendorReagents
-        and MakeSpace.Data.VendorReagents[itemID]
-    if profEntries and not isVendorReagent then
-      renderProfessionDetails(tooltip, profEntries, itemID)
-      local row, inLog
-      if questIDs then row, inLog = openQuestRow(questIDs, profEntries) end
-      if row then addQuestRow(tooltip, row, inLog) end
-    elseif questIDs and not isVendorReagent then
-      renderQuestDetails(tooltip, questIDs)
-    elseif protectedNote then
-      addLine(tooltip, protectedNote, INFO_COLOR.r, INFO_COLOR.g, INFO_COLOR.b)
-    elseif not questIDs and isQuestItem(itemID) then
-      -- The one case that would otherwise say nothing at all: the game calls it a
-      -- quest item and the quest data has no quest for you that wants it.
-      addLine(tooltip, NO_QUEST_ROW, MUTED_COLOR.r, MUTED_COLOR.g, MUTED_COLOR.b)
-    end
+    renderContextRows(tooltip, itemID, profEntries, questIDs, isVendorReagent)
   end
 
   if lootNote then
-    addLine(tooltip, lootNote, INFO_COLOR.r, INFO_COLOR.g, INFO_COLOR.b)
+    addLine(tooltip, lootNote, INFO_COLOR)
   end
 
   if lootDecision == "take" or lootDecision == "consider" then
     local green = VERDICT_COLORS.green
-    addLine(tooltip, LOOT_TAKE_LINE, green.r, green.g, green.b)
+    addLine(tooltip, LOOT_TAKE_LINE, green)
     if lootDecision == "consider" then
-      addLine(tooltip, LOOT_CONSIDER_DETAIL, INFO_COLOR.r, INFO_COLOR.g, INFO_COLOR.b)
+      addLine(tooltip, LOOT_CONSIDER_DETAIL, INFO_COLOR)
     end
   end
 

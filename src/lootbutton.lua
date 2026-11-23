@@ -1,8 +1,8 @@
 -- MakeSpace: the delete button on the loot window.
--- While the make-room plan has bag items to delete, a button under the loot
--- window deletes exactly those, in one click. Hovering it lists them.
--- The logic is plain functions that take their game calls as a table, so it
--- can be tested without the game.
+-- While the make-room plan has bag items to delete, a button under the loot window
+-- deletes the first of them per click (the game allows one delete per click); the
+-- next click takes the next. Hovering lists them all. Game calls come in as a table
+-- so the logic is testable.
 
 MakeSpace = MakeSpace or {}
 MakeSpace.LootButton = {}
@@ -10,14 +10,15 @@ MakeSpace.LootButton = {}
 local PREFIX = "|cff54de7d[Make Space]|r "
 
 -- A long name is cut so the text fits the button as it is.
-local BUTTON_NAME_MAX = 14
+local BUTTON_NAME_MAX = 20
 
---- The button text.
--- @param count number  how many bag items it deletes
--- @param name string|nil  the item's name, used when it is the only one
+--- The button text: the item this click deletes, and how many more are planned.
+-- @param count number  how many bag items the plan deletes
+-- @param name string|nil  the first item's name
 function MakeSpace.LootButton.Label(count, name)
-  if count == 1 and name then return "Delete " .. MakeSpace.MakeRoom.ShortName(name, BUTTON_NAME_MAX) end
-  return "Delete " .. count .. (count == 1 and " item" or " items")
+  local text = "Delete " .. (name and MakeSpace.MakeRoom.ShortName(name, BUTTON_NAME_MAX) or "item")
+  if count > 1 then text = text .. " +" .. (count - 1) end
+  return text
 end
 
 --- The hover lines: a title, then one row per item with what it sells for.
@@ -31,36 +32,31 @@ function MakeSpace.LootButton.TooltipLines(deletes)
     local right = (planned.value or 0) > 0 and MakeSpace.Verdict.FormatMoney(planned.value) or ""
     rows[#rows + 1] = { left = name, right = right }
   end
-  return { title = "Bags full: makes room for loot", rows = rows }
+  local title = #rows > 1 and "Bags full: each click deletes the top one" or "Bags full: makes room for loot"
+  return { title = title, rows = rows }
 end
 
---- Delete the planned items. Nothing is deleted unless every one still holds
--- the item and stack size it was planned for, so a bag that changed since the
--- last scan never loses something else.
+--- Delete the first planned item, if its slot still holds the item and stack size
+-- it was planned for, so a changed bag never loses something else.
 -- @param deletes table  list of { bag, slot, itemID, count }
--- @param api table  { cursorHasItem, itemAt(bag, slot) -> id, count,
---                     pickup(bag, slot), delete(), clearCursor() }
--- @return number, string|nil  how many were deleted, and why it stopped
+-- @param api table  { cursorHasItem, itemAt, pickup, delete, clearCursor }
+-- @return number, string|nil  how many were deleted (0 or 1), and why not
 function MakeSpace.LootButton.Run(deletes, api)
+  local planned = deletes[1]
+  if not planned then return 0, nil end
   if api.cursorHasItem() then return 0, "your cursor is holding something" end
-  for _, planned in ipairs(deletes) do
-    local id, count = api.itemAt(planned.bag, planned.slot)
-    if id ~= planned.itemID or (count or 1) ~= (planned.count or 1) then
-      return 0, "your bags changed, so the list was out of date"
-    end
+  local id, count = api.itemAt(planned.bag, planned.slot)
+  if id ~= planned.itemID or (count or 1) ~= (planned.count or 1) then
+    return 0, "your bags changed, so the list was out of date"
   end
-  local deleted = 0
-  for _, planned in ipairs(deletes) do
-    api.pickup(planned.bag, planned.slot)
-    pcall(api.delete)
-    if api.cursorHasItem() then
-      -- The game did not take the delete: put the item back and say so.
-      api.clearCursor()
-      return deleted, "the game did not allow the delete"
-    end
-    deleted = deleted + 1
+  api.pickup(planned.bag, planned.slot)
+  pcall(api.delete)
+  if api.cursorHasItem() then
+    -- The game did not take the delete: put the item back and say so.
+    api.clearCursor()
+    return 0, "the game did not allow the delete"
   end
-  return deleted, nil
+  return 1, nil
 end
 
 -- The real game calls.
@@ -79,7 +75,8 @@ local function gameApi()
 end
 
 local button
-local BUTTON_WIDTH = 160
+local BUTTON_WIDTH = 170
+local MIN_BUTTON_WIDTH = BUTTON_WIDTH
 
 local function showTooltip(self)
   if not GameTooltip then return end
@@ -94,9 +91,8 @@ end
 
 local function onClick()
   local deletes = MakeSpace.Scanner.PlannedDeletes()
-  if #deletes == 0 then return end
   local _, problem = MakeSpace.LootButton.Run(deletes, gameApi())
-  if problem then print(PREFIX .. "Nothing more deleted: " .. problem .. ".") end
+  if problem then print(PREFIX .. "Nothing deleted: " .. problem .. ".") end
 end
 
 local function buttonFrame()
@@ -124,6 +120,8 @@ function MakeSpace.LootButton.Update()
     return
   end
   frame:SetText(MakeSpace.LootButton.Label(summary.deletes, summary.deleteNames and summary.deleteNames[1]))
+  local text = frame.GetFontString and frame:GetFontString()
+  if text then frame:SetWidth(math.max(MIN_BUTTON_WIDTH, text:GetStringWidth() + 30)) end
   frame:ClearAllPoints()
   frame:SetPoint("TOP", LootFrame, "BOTTOM", 0, -4)
   frame:Show()

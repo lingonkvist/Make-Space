@@ -7,11 +7,9 @@ MakeSpace.Menu = {}
 
 local LABELS = { green = "Safe to delete", yellow = "Worth a glance", none = "No dot" }
 
---- The rows of the menu: "Default" first, then the marks that would change
--- something. The mark that equals what the item gets by default is left out,
--- so "Default (safe to delete)" and "Safe to delete" never sit side by side,
--- and "No dot" only shows where there is a dot to hide. The row you have
--- chosen is always there.
+--- The rows of the menu: "Default" first, then the marks that would change something.
+-- The mark equal to the default is left out, "No dot" only shows where there is a
+-- dot to hide, and the chosen row is always there.
 -- @param defaultVerdict string|nil  "green", "yellow" or nil: the dot with no mark
 -- @param mark string|nil            the item's mark: "green", "yellow", "none" or nil
 -- @return table list of { label, mark, icon, checked }; mark nil means "Default"
@@ -33,10 +31,8 @@ function MakeSpace.Menu.Rows(defaultVerdict, mark)
   return rows
 end
 
--- ---------------------------------------------------------------------------
--- The frame. Plain frames and textures only, so it does not depend on which
--- menu system the client has. Not covered by the tests: confirmed in game.
--- ---------------------------------------------------------------------------
+-- The frame: plain frames and textures, independent of the client's menu system.
+-- Not covered by tests; confirmed in game.
 local ROW_HEIGHT = 22
 local MENU_WIDTH = 210
 local TITLE_HEIGHT = 21 -- the title and its divider, above the rows

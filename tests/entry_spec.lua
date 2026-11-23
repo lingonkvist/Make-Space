@@ -50,6 +50,16 @@ describe("Entry point: loot events", function()
     assert.are.equal(0, scans)
   end)
 
+  it("does not read the auto-loot flag of LOOT_OPENED as a cleared slot", function()
+    loadEntry()
+    local cleared = "unset"
+    _G.MakeSpace.Scanner.RefreshLoot = function(slot) cleared = slot end
+    fire("LOOT_OPENED", 1, false)
+    assert.is_nil(cleared)
+    fire("LOOT_SLOT_CLEARED", 2)
+    assert.are.equal(2, cleared)
+  end)
+
   it("scans when the window opens with items in it", function()
     loadEntry()
     _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = true end
@@ -78,6 +88,51 @@ describe("Entry point: loot events", function()
     assert.are.equal(1, #later)
     later[1]()
     assert.are.equal(2, lootUpdates)
+    _G.C_Timer = nil
+  end)
+
+  it("a burst of loot events in one frame costs one rescan now and one after", function()
+    loadEntry()
+    local later = {}
+    _G.C_Timer = { After = function(_, fn) later[#later + 1] = fn end }
+    hasLoot = true
+    _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = true end
+    fire("LOOT_OPENED")
+    fire("LOOT_SLOT_CLEARED", 1)
+    fire("LOOT_SLOT_CLEARED", 2)
+    fire("LOOT_SLOT_CLEARED", 3)
+    assert.are.equal(1, scans)
+    assert.are.equal(1, #later)
+    later[1]()
+    assert.are.equal(2, scans) -- the events that arrived meanwhile are covered
+    assert.are.equal(4, _G.MakeSpace.LootStats.events)
+    assert.are.equal(2, _G.MakeSpace.LootStats.scans)
+    _G.C_Timer = nil
+  end)
+
+  it("no extra rescan after the frame when nothing else arrived", function()
+    loadEntry()
+    local later = {}
+    _G.C_Timer = { After = function(_, fn) later[#later + 1] = fn end }
+    hasLoot = true
+    _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = true end
+    fire("LOOT_OPENED")
+    later[1]()
+    assert.are.equal(1, scans)
+    _G.C_Timer = nil
+  end)
+
+  it("takes the banner down at once when the last item is taken in a burst", function()
+    loadEntry()
+    local later = {}
+    _G.C_Timer = { After = function(_, fn) later[#later + 1] = fn end }
+    hasLoot = true
+    _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = true end
+    fire("LOOT_OPENED")
+    local before = lootUpdates
+    _G.MakeSpace.Scanner.RefreshLoot = function() hasLoot = false end
+    fire("LOOT_SLOT_CLEARED", 1)
+    assert.are.equal(before + 1, lootUpdates)
     _G.C_Timer = nil
   end)
 

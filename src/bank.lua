@@ -1,10 +1,9 @@
 -- MakeSpace: what a verdict means once the item is in the bank.
---
--- People bank things on purpose, often for another character, so a verdict
--- only stays as it is when it holds for any character; one that depends on this
--- character's professions, class or quests is capped at a yellow reminder; and
--- one that only says what to do with an item that is not banked yet is dropped.
--- An unknown rule gets the cautious treatment.
+-- People bank things on purpose, often for another character. A verdict stays as it
+-- is only when it holds for any character; one that depends on this character's
+-- professions, class or quests is capped at a yellow reminder; one that only says
+-- what to do with an item not yet banked is dropped. Unknown rules get the cautious
+-- treatment.
 MakeSpace = MakeSpace or {}
 
 local BANK_KEEPS = {
@@ -28,14 +27,13 @@ local BANK_DROPS_GREEN = {
   outleveled_reagent = true,
 }
 
---- Turn a verdict result into what the bank should show.
--- The warband bank exists to share items between your characters, so there
--- even soulbound-looking gear may be meant for an alt: nothing is kept there
--- that depends on the item being bound.
+--- Turn a verdict result into what the bank should show. The warband bank is for
+-- sharing between characters, so nothing that depends on the item being bound is
+-- kept there.
 -- @param result table|nil  { verdict, reason, detail, tag, rule }
--- @param isWarband boolean|nil  the slot is in the warband bank
--- @return table|nil  a fresh table (results are shared between slots), or
---   the same nil/empty result when there is nothing to show
+-- @param isWarband boolean|nil
+-- @return table|nil  a fresh table (results are shared between slots), or the same
+--   nil/empty result when there is nothing to show
 function MakeSpace.Verdict.ForBank(result, isWarband)
   if not result or not result.verdict then return result end
   if result.heading and result.heading.title == MakeSpace.Notes.BANK_IT_TITLE then return {} end

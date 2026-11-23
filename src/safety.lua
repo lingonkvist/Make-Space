@@ -1,16 +1,10 @@
 -- MakeSpace: safety
--- One place that knows which items must never be called safe to delete.
---
--- The rules in verdict.lua only ever *propose* a green. Before a green is
--- accepted, Safety looks at the item itself. If the item is protected for a
--- reason the proposing rule is not allowed to override, the green is dropped
--- and the next rule gets a turn. A protection beats a green, the same idea as
--- the "deny-overrides" combining algorithm in access-control policies.
---
--- This is why a rule never has to remember "but not reagents": it can't
--- forget, because the check does not live in the rule.
---
--- Pure: reads item fields and the data tables, never the game.
+-- The one place that knows which items must never be called safe to delete. Rules
+-- in verdict.lua only propose a green; before it is accepted, Safety checks the item.
+-- If it is protected in a way the rule may not override, the green is dropped and
+-- the next rule gets a turn (a protection beats a green, like "deny-overrides" in
+-- access control). A rule never has to remember "but not reagents".
+-- Pure: reads item fields and data tables, never the game.
 
 MakeSpace = MakeSpace or {}
 MakeSpace.Safety = {}
@@ -115,10 +109,9 @@ function MakeSpace.Safety.IsProtected(item)
   return false
 end
 
---- Is this something in constant use, never "for later": the hearthstone, a
--- profession's tools, Soul Shards, class reagents? Narrower than the
--- essential_item protection, which also covers whole item classes (gems, keys,
--- containers) that a far quest can rightly make worth banking.
+--- Is this in constant use, never "for later": the hearthstone, a profession's tools,
+-- Soul Shards, class reagents? Narrower than essential_item, which also covers whole
+-- classes (gems, keys, containers) that a far quest can rightly make worth banking.
 function MakeSpace.Safety.InConstantUse(item)
   return (ESSENTIAL_ITEMS[item.id] or MakeSpace.Safety.Has(item, "spell_reagent")) and true or false
 end

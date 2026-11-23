@@ -1,10 +1,9 @@
 -- MakeSpace: make room for loot
--- When the bags are full and the loot window is open, work out which loot is
--- worth a slot and which junk to delete to make room. Pure: the scanner reads
--- the game and hands plain tables in.
---
--- Loot and junk are ranked by vendor price times stack size. Loot that beats
--- the cheapest junk is worth taking; loot that does not is better left.
+-- When the bags are full and the loot window is open, work out which loot is worth a
+-- slot and which junk to delete to make room. Pure: the scanner reads the game and
+-- hands plain tables in. Loot and junk are ranked by what the stack fetches (the
+-- vendor price, or a steady auction price when higher); loot that beats the cheapest
+-- junk is worth taking.
 
 MakeSpace = MakeSpace or {}
 MakeSpace.MakeRoom = {}
@@ -23,11 +22,9 @@ local NEVER_JUNK_CLASSES = {
   [7] = true, -- trade goods
 }
 
---- Could this bag item be suggested for deletion?
--- Grays and whites that sell for something, and are not on the never list.
--- White gear only counts once MakeSpace already calls it safe (a class that
--- can't wear it, or worse than what is equipped), so a possible upgrade is
--- never offered.
+--- Could this bag item be suggested for deletion? Grays and whites that sell for
+-- something and are not on the never list. White gear only counts once MakeSpace
+-- already calls it safe, so a possible upgrade is never offered.
 -- @param item table    the scanner's item fields
 -- @param existing table|nil the slot's verdict result
 function MakeSpace.MakeRoom.IsJunkCandidate(item, existing)
@@ -54,13 +51,11 @@ function MakeSpace.MakeRoom.ValueOf(sellPrice, count)
 end
 
 --- Decide what to take and what to delete.
--- @param loot table  list of { slot, value, priority, stacks } (priority = always
---                    take: quest items, rares, things with no vendor price;
---                    stacks = joins a stack you already carry, needs no slot)
+-- @param loot table  list of { slot, value, priority, stacks }: priority = always take
+--   (quest items, rares, no vendor price); stacks = joins a stack you carry, needs no slot
 -- @param junk table  list of { key, bag, slot, value } (bag junk candidates)
 -- @param freeSlots number free regular bag slots
--- @return table { take = {[lootSlot]=true}, deletes = {junk entries in order},
---                 active = boolean }
+-- @return table { take = {[lootSlot]=true}, deletes = {junk entries in order}, active = boolean }
 function MakeSpace.MakeRoom.Plan(loot, junk, freeSlots)
   local plan = { take = {}, deletes = {}, active = false }
 
@@ -112,9 +107,9 @@ function MakeSpace.MakeRoom.Plan(loot, junk, freeSlots)
   return plan
 end
 
---- The result stored for a junk slot chosen for deletion. A slot that already
--- has a verdict keeps its dot and wording (green stays green). One with none
--- gets a yellow dot: it was picked by price, which is a hint, not a certainty.
+--- The result stored for a junk slot chosen for deletion. A slot that already has a
+-- verdict keeps its dot and wording; one with none gets a yellow dot (picked by price:
+-- a hint, not a certainty).
 -- @param existing table|nil
 -- @param value number copper
 function MakeSpace.MakeRoom.MarkedResult(existing, value)
@@ -155,7 +150,7 @@ local NAME_MAX = 22
 local function shortName(name, max)
   max = max or NAME_MAX
   if #name <= max then return name end
-  return name:sub(1, max - 3) .. "..."
+  return (name:sub(1, max - 3):gsub("%s+$", "")) .. "..."
 end
 MakeSpace.MakeRoom.ShortName = shortName
 
@@ -175,6 +170,6 @@ function MakeSpace.MakeRoom.BannerText(summary)
   end
   if (summary.noRoom or 0) > 0 then return "Bags full: make room by hand" end
   if (summary.leaving or 0) == 0 then return nil end
-  if not summary.cheapestJunkValue then return "Bags full, nothing safe to delete" end
+  if not summary.cheapestJunkValue then return "Bags full: nothing safe to delete" end
   return "Bags full: nothing here is worth a slot"
 end

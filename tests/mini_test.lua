@@ -1,5 +1,6 @@
 -- mini_test.lua: minimal describe/it/assert harness for MakeSpace tests
 
+local current_spec = ""
 local current_describe = ""
 local passed = 0
 local failed = 0
@@ -37,7 +38,7 @@ function it(name, fn)
     passed = passed + 1
   else
     failed = failed + 1
-    local full = current_describe .. " > " .. name
+    local full = current_spec .. ": " .. current_describe .. " > " .. name
     errors[#errors + 1] = full .. "\n    " .. tostring(err)
     io.write("  FAIL: " .. full .. "\n")
   end
@@ -67,6 +68,29 @@ assert.is_truthy = function(val)
   if not val then
     error("expected truthy but got " .. tostring(val), 2)
   end
+end
+
+assert.is_true = function(val)
+  if val ~= true then
+    error("expected true but got " .. tostring(val), 2)
+  end
+end
+
+assert.is_false = function(val)
+  if val ~= false then
+    error("expected false but got " .. tostring(val), 2)
+  end
+end
+
+-- The runner names the spec file before it runs, so a failure says where it is.
+function mini_test_begin(specName)
+  current_spec = specName
+  current_describe = ""
+end
+
+-- Counts so far, for the per-spec lines of the runner.
+function mini_test_counts()
+  return passed, failed
 end
 
 function mini_test_report()

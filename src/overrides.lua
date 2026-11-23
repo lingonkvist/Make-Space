@@ -1,8 +1,6 @@
 -- MakeSpace: your own marks on items
--- One choice per item, kept for the whole account (MakeSpaceAccountDB.marks):
---   "green"  always a green dot, "safe to delete"
---   "yellow" always a yellow dot, "worth a glance"
---   "none"   never a dot
+-- One choice per item, kept account-wide (MakeSpaceAccountDB.marks):
+--   "green" safe to delete, "yellow" worth a glance, "none" never a dot.
 -- An item with no mark follows the normal rules.
 
 MakeSpace = MakeSpace or {}

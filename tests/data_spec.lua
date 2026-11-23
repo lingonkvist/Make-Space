@@ -116,7 +116,7 @@ describe("Data files: shape", function()
   it("library books are item IDs that the quest data also knows", function()
     for id, flag in pairs(Data.LibraryBooks) do
       assert.are.equal("number", type(id))
-      assert.are.equal(true, flag)
+      assert.is_true(flag)
       assert.is_truthy(Data.QuestItems[id] ~= nil)
     end
   end)
@@ -202,7 +202,7 @@ describe("Data files: auction prices above the cap", function()
     for _, market in ipairs(markets()) do
       for id, flag in pairs(market.AboveCap or {}) do
         assert.are.equal("number", type(id))
-        assert.are.equal(true, flag)
+        assert.is_true(flag)
         assert.is_nil(market.Ceiling[id])
       end
     end

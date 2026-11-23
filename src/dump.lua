@@ -1,7 +1,6 @@
 -- MakeSpace: inventory dump
--- Turns a scanner snapshot into plain text a person can copy out of the
--- game and paste somewhere else (for testing rules against real inventories).
--- Format() is pure; Show() builds the copy window.
+-- Turns a scanner snapshot into plain text to copy out of the game, for testing
+-- rules against real inventories. Format() is pure; Show() builds the copy window.
 
 MakeSpace = MakeSpace or {}
 MakeSpace.Dump = {}
@@ -64,11 +63,9 @@ local function rowCells(row)
   }
 end
 
---- Render a snapshot as text: a few header lines, then one pipe-separated
--- row per item.
+--- Render a snapshot as text: header lines, then one pipe-separated row per item.
 -- @param snapshot table  from MakeSpace.Scanner.CollectInventory()
--- @param context  table  { version = "...", build = "...", extra = { "key=value", ... } }
---                         extra lines go in the header, for bug reports
+-- @param context  table  { version, build, extra = { "key=value", ... } } (header lines)
 -- @return string
 function MakeSpace.Dump.Format(snapshot, context)
   context = context or {}

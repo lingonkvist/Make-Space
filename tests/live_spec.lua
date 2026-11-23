@@ -171,19 +171,19 @@ describe("Live prices: reading Auctionator", function()
 
   it("calls a price steady when at least two of the last 3 days agree within a quarter", function()
     local function steady(history) return MakeSpace.Live.IsSteady(item, fakeAuctionator(history)) end
-    assert.are.equal(true, steady({ { rawDay = "2507", minSeen = 1800, maxSeen = 1800 }, { rawDay = "2506", minSeen = 1800, maxSeen = 1800 } }))
-    assert.are.equal(true, steady({ { rawDay = "2507", minSeen = 1000, maxSeen = 1200 }, { rawDay = "2506", minSeen = 1100, maxSeen = 1250 } }))
+    assert.is_true(steady({ { rawDay = "2507", minSeen = 1800, maxSeen = 1800 }, { rawDay = "2506", minSeen = 1800, maxSeen = 1800 } }))
+    assert.is_true(steady({ { rawDay = "2507", minSeen = 1000, maxSeen = 1200 }, { rawDay = "2506", minSeen = 1100, maxSeen = 1250 } }))
     -- one day only, a wide range, or a second day too old to count
-    assert.are.equal(false, steady({ { rawDay = "2507", minSeen = 1800, maxSeen = 1800 } }))
-    assert.are.equal(false, steady({ { rawDay = "2507", minSeen = 1000, maxSeen = 2000 }, { rawDay = "2506", minSeen = 1000, maxSeen = 1000 } }))
-    assert.are.equal(false, steady({ { rawDay = "2507", minSeen = 1800, maxSeen = 1800 }, { rawDay = "2503", minSeen = 1800, maxSeen = 1800 } }))
-    assert.are.equal(false, MakeSpace.Live.IsSteady(item, {}))
+    assert.is_false(steady({ { rawDay = "2507", minSeen = 1800, maxSeen = 1800 } }))
+    assert.is_false(steady({ { rawDay = "2507", minSeen = 1000, maxSeen = 2000 }, { rawDay = "2506", minSeen = 1000, maxSeen = 1000 } }))
+    assert.is_false(steady({ { rawDay = "2507", minSeen = 1800, maxSeen = 1800 }, { rawDay = "2503", minSeen = 1800, maxSeen = 1800 } }))
+    assert.is_false(MakeSpace.Live.IsSteady(item, {}))
   end)
 
   it("returns whether the price is steady as a third value", function()
     local one = { { rawDay = "2507", minSeen = 300, maxSeen = 300 }, { rawDay = "2506", minSeen = 300, maxSeen = 300 } }
     local _, _, steady = MakeSpace.Live.FreshPrice(item, api(300, 0), fakeAuctionator(one))
-    assert.are.equal(true, steady)
+    assert.is_true(steady)
   end)
 
   it("describes what Auctionator reports, unfiltered", function()

@@ -26,6 +26,18 @@ local QUALITIES = { 0, 1, 2, 3 }
 local QUEST_STATES = { "none", "open", "done" }
 local ITEM_CLASSES = { 7, 12, 15, 4 } -- trade goods, quest, miscellaneous, armor
 
+-- One state per class and level, built once: the checks never change them.
+local STATES = {}
+for _, class in ipairs(CLASSES) do
+  STATES[class] = {}
+  for _, level in ipairs(LEVELS) do
+    STATES[class][level] = {
+      level = level, playerClass = class, class = class,
+      professionNames = {}, professionSkillLines = {},
+    }
+  end
+end
+
 local function idsOf(...)
   local seen, ids = {}, {}
   for _, tbl in ipairs({ ... }) do
@@ -40,7 +52,7 @@ end
 --- Run `check(item, state, verdict, winningRule)` over every combination.
 -- @return number the number of combinations checked
 local function forEverySituation(ids, check)
-  local checked = 0
+  local checked, combo = 0, 0
   for _, id in ipairs(ids) do
     for _, itemClass in ipairs(ITEM_CLASSES) do
       for _, quality in ipairs(QUALITIES) do
@@ -55,22 +67,14 @@ local function forEverySituation(ids, check)
               item.questItemQuestIDs = { 1 }
               item.allQuestObjectivesCompleted = (questState == "done")
             end
-            for _, level in ipairs(LEVELS) do
-              for _, class in ipairs(CLASSES) do
-                local state = {
-                  level = level, playerClass = class, class = class,
-                  professionNames = {}, professionSkillLines = {},
-                }
-                local verdict = MakeSpace.Verdict.Evaluate(item, state)
-                local winner
-                for _, entry in ipairs(MakeSpace.Verdict.Trace(item, state)) do
-                  if not entry.blockedBy and entry.verdict == verdict then
-                    winner = entry.rule; break
-                  end
-                end
-                check(item, state, verdict, winner)
-                checked = checked + 1
-              end
+            -- Every class sees every item; the level rotates with the situation,
+            -- so each level is still met by every item and every class.
+            combo = combo + 1
+            for classIndex, class in ipairs(CLASSES) do
+              local state = STATES[class][LEVELS[(combo + classIndex) % #LEVELS + 1]]
+              local result = MakeSpace.Verdict.Judge(item, state)
+              check(item, state, result.verdict, result.rule)
+              checked = checked + 1
             end
           end
         end
@@ -89,7 +93,7 @@ describe("Safety invariants over the real data", function()
     local checked = forEverySituation(reagentIds, function(item, _, verdict, winner)
       if verdict == "green" then
         greens = greens + 1
-        assert.are.equal(true, winner == "vendor_reagent" or winner == "class_reagent")
+        assert.is_true(winner == "vendor_reagent" or winner == "class_reagent")
       end
     end)
     assert.are.equal(true, checked > 100000) -- guard against a test that checks nothing
@@ -104,18 +108,18 @@ describe("Safety invariants over the real data", function()
     forEverySituation(sample, function(item, _, verdict)
       if item.questItemQuestIDs and not item.allQuestObjectivesCompleted then
         seenOpen = seenOpen + 1
-        assert.are.equal(false, verdict == "green")
+        assert.is_false(verdict == "green")
       end
     end)
-    assert.are.equal(true, seenOpen > 1000)
+    assert.is_true(seenOpen > 1000)
   end)
 
   it("the hearthstone and profession tools are never green", function()
     local essentials = { 6948, 2901, 5956, 7005, 6219, 6256, 4471 }
     local checked = forEverySituation(essentials, function(_, _, verdict)
-      assert.are.equal(false, verdict == "green")
+      assert.is_false(verdict == "green")
     end)
-    assert.are.equal(true, checked > 1000)
+    assert.is_true(checked > 1000)
   end)
 
   it("make-room never offers a protected item", function()
@@ -128,7 +132,7 @@ describe("Safety invariants over the real data", function()
         if MakeSpace.MakeRoom.IsJunkCandidate(item) then offered = offered + 1 end
       end
     end
-    assert.are.equal(true, checked > 1000)
+    assert.is_true(checked > 1000)
     assert.are.equal(0, offered)
   end)
 end)

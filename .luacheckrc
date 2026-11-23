@@ -5,7 +5,7 @@ unused_args = false
 exclude_files = { "data/*", "tests/*" }
 globals = { "MakeSpace", "MakeSpaceDB", "MakeSpaceAccountDB", "SLASH_MAKESPACE1", "SLASH_MAKESPACE2", "SlashCmdList" }
 read_globals = {
-  "Baganator", "Bagnon", "C_AddOns", "C_Bank", "C_Container", "C_Item", "C_QuestLog", "C_SkillInfo", "C_Spell", "C_Timer",
+  "Baganator", "Bagnon", "C_AddOns", "C_Bank", "C_Container", "C_Item", "C_QuestLog", "C_SkillInfo", "C_Spell", "C_Timer", "debugprofilestop",
   "BankFrame", "ChatFontNormal", "CloseAllBags", "ContainerFrame1", "ContainerFrameCombinedBags", "CreateFrame", "GetCursorPosition", "InCombatLockdown", "IsAltKeyDown",
   "EUI_Bags", "EllesmereUI", "Enum", "GameTooltip", "GetAddOnMetadata", "GetBagName", "GetBuildInfo",
   "GetInventoryItemLink", "GetItemInfo", "GetItemInfoInstant", "GetLootSlotInfo", "GetLootSlotLink",

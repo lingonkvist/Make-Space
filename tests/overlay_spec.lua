@@ -1,5 +1,4 @@
 -- MakeSpace: overlay tests (EllesmereUI Bags adapter and recycled buttons)
--- Run with: python3 -I tests/run_tests.py (from the MakeSpace/ root)
 
 _G.MakeSpace = nil
 dofile("src/bags.lua")
@@ -195,7 +194,7 @@ describe("Ellesmere Bags adapter", function()
     installEllesmere({})
     installScanner({})
     MakeSpace.Overlay.UpdateAll()
-    assert.are.equal(false, button.dots[1].shown)
+    assert.is_false(button.dots[1].shown)
     assert.is_nil(driver.script)
 
     MakeSpace.Overlay.SetVendorOpen(false)
@@ -219,8 +218,8 @@ describe("Ellesmere Bags adapter", function()
     installScanner({ ["0:3"] = { verdict = "yellow" } })
     MakeSpace.Overlay.UpdateAll()
     for i = 2, #button.dots do
-      assert.are.equal(false, button.dots[i].shown)
-      assert.are.equal(false, button.dots[i].group.playing)
+      assert.is_false(button.dots[i].shown)
+      assert.is_false(button.dots[i].group.playing)
     end
     _G.EllesmereUI = nil
   end)
@@ -237,8 +236,8 @@ describe("Ellesmere Bags adapter", function()
     installScanner({})
     MakeSpace.Overlay.UpdateAll()
     for i = 2, #button.dots do
-      assert.are.equal(false, button.dots[i].shown)
-      assert.are.equal(false, button.dots[i].group.playing)
+      assert.is_false(button.dots[i].shown)
+      assert.is_false(button.dots[i].group.playing)
     end
     _G.EllesmereUI = nil
   end)
@@ -249,7 +248,7 @@ describe("Ellesmere Bags adapter", function()
     installScanner({ ["0:3"] = { verdict = "green", quiet = true } })
 
     MakeSpace.Overlay.UpdateAll()
-    assert.are.equal(false, button.dots[1].shown)
+    assert.is_false(button.dots[1].shown)
     _G.EllesmereUI = nil
   end)
 
@@ -630,7 +629,7 @@ describe("Baganator adapter", function()
   it("anchors the dot to the button's corner itself, and keeps the corner when the dot shows", function()
     installBaganator()
     local painted, dot, button = paint({ itemLocation = { bagID = 0, slotIndex = 3 }, itemLink = "item:111" })
-    assert.are.equal(true, painted)
+    assert.is_true(painted)
     -- anchored by its centre, so it can swell in place; half its size on, the dot's
     -- edge is past the corner: right of it and above it
     assert.are.equal("CENTER", dot.point[1])
@@ -671,7 +670,7 @@ describe("Baganator adapter", function()
     _G.CreateFrame = nil
     assert.is_truthy(created)
     assert.is_truthy(created.level > 7)
-    assert.are.equal(false, created.mouse)
+    assert.is_false(created.mouse)
     tearDown()
   end)
 
@@ -718,7 +717,7 @@ describe("Baganator adapter", function()
     -- The slot is emptied: Baganator redraws the button with a link the real slot does not hold.
     onUpdate(dotOf(button), { itemLocation = { bagID = 0, slotIndex = 4 }, itemLink = "item:111" })
     for i = 1, #button.dots do
-      assert.are.equal(false, button.dots[i].shown)
+      assert.is_false(button.dots[i].shown)
     end
     tearDown()
   end)
@@ -779,7 +778,7 @@ describe("Loot banner", function()
   it("stays on one line and grows to fit the text, up to a limit", function()
     local frame = install({ active = true, deletes = 1, leaving = 0 })
     MakeSpace.Overlay.UpdateBanner()
-    assert.are.equal(false, frame().text.wrap)
+    assert.is_false(frame().text.wrap)
     assert.are.equal(324, frame().width)
     tearDown()
   end)

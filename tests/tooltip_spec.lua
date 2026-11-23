@@ -1,5 +1,4 @@
 -- MakeSpace: tooltip unit tests
--- Run with: lua5.1 tests/tooltip_spec.lua (from the MakeSpace/ root)
 
 _G.GameTooltip = {
   HookScript = function() end,
@@ -127,7 +126,7 @@ describe("tooltip basic output", function()
     MakeSpace.Scanner = {
       GetResult = function()
         return { verdict = "yellow", reason = "Weak bandage",
-                 heading = { title = "Weak bandage (heals 6%)",
+                 heading = { title = "Weak bandage",
                              detail = "Heals 6% of your health\nBest for you: Silk Bandage" } }
       end,
     }
@@ -1440,7 +1439,7 @@ describe("tooltip in the loot window", function()
     teardown()
 
     assert.is_truthy(tt.lines[1].text:find("Save for vendor$"))
-    assert.are.equal("Cheapest gray, but worth 5s", plainCoins(tt.lines[2].text))
+    assert.are.equal("Cheapest gray, sells for 5s", plainCoins(tt.lines[2].text))
     assert.are.equal(2, #tt.lines)
   end)
 

@@ -40,6 +40,7 @@ local ITEMS = {
   [900] = { "Old Blue Chest", 3, 10, 10, 1, "INVTYPE_CHEST", 300, 4, 1 },
   [901] = { "Worn White Chest", 1, 30, 20, 1, "INVTYPE_CHEST", 100, 4, 1 },
   [902] = { "Worn Blue Chest", 3, 40, 30, 1, "INVTYPE_CHEST", 900, 4, 1 },
+  [904] = { "Test Satchel", 2, 33, 1, 1, "INVTYPE_CLOAK", 20, 4, 1 }, -- low item level, Use effect
 }
 local bags, freeByBag, loot
 
@@ -93,7 +94,7 @@ describe("Scanner: openable items", function()
   it("explains an item from the real bag slot when you carry one", function()
     setUp({ [0] = { { id = 200, opens = true } } }, {})
     local explained = MakeSpace.Scanner.Explain(200)
-    assert.are.equal(true, explained.fromBag)
+    assert.is_true(explained.fromBag)
     assert.are.equal("openable", explained.protections[1])
   end)
 end)
@@ -108,7 +109,7 @@ describe("Scanner: a green you marked yourself", function()
     local result = MakeSpace.Scanner.GetResult(0, 1)
     assert.are.equal("green", result.verdict)
     assert.are.equal("marked", result.rule)
-    assert.are.equal(false, result.sellable)
+    assert.is_false(result.sellable)
   end)
 
   it("still says Safe to vendor for an ordinary green with a sell price", function()
@@ -116,7 +117,7 @@ describe("Scanner: a green you marked yourself", function()
     MakeSpace.Scanner.ScanAll()
     local result = MakeSpace.Scanner.GetResult(0, 1)
     assert.are.equal("green", result.verdict)
-    assert.are.equal(true, result.sellable)
+    assert.is_true(result.sellable)
   end)
 end)
 
@@ -136,7 +137,7 @@ describe("Scanner: make room", function()
     MakeSpace.Scanner.RefreshLoot()
     MakeSpace.Scanner.ScanAll()
     assert.are.equal(0, MakeSpace.Scanner.MakeRoomSummary().freeSlots)
-    assert.are.equal(true, MakeSpace.Scanner.MakeRoomSummary().active)
+    assert.is_true(MakeSpace.Scanner.MakeRoomSummary().active)
   end)
 
   it("lists the bag items the plan would delete, for the loot window button", function()
@@ -153,6 +154,19 @@ describe("Scanner: make room", function()
     assert.is_truthy(planned[1].itemID)
   end)
 
+  it("never offers an item in a quiver or profession bag: deleting it frees no room", function()
+    setUp({ [0] = { { id = 400 } }, [1] = { { id = 300 } } }, {}, { { id = 500, qty = 1 } })
+    _G.C_Container.GetContainerNumFreeSlots = function(bag)
+      if bag == 1 then return 0, 1 end -- a quiver
+      return 0, 0
+    end
+    MakeSpace.Scanner.RefreshLoot()
+    MakeSpace.Scanner.ScanAll()
+    local planned = MakeSpace.Scanner.PlannedDeletes()
+    assert.are.equal(1, #planned)
+    assert.are.equal(0, planned[1].bag) -- the Fine Rag, not the cheaper Torn Rag in the quiver
+  end)
+
   it("lists nothing when the bags have room", function()
     setUp({ [0] = { { id = 300 } } }, { [0] = 3 }, { { id = 500, qty = 1 } })
     MakeSpace.Scanner.RefreshLoot()
@@ -163,16 +177,16 @@ describe("Scanner: make room", function()
   it("knows whether a loot window has anything in it", function()
     setUp({ [0] = { { id = 300 } } }, { [0] = 0 }, { { id = 500, qty = 1 } })
     MakeSpace.Scanner.RefreshLoot()
-    assert.are.equal(true, MakeSpace.Scanner.HasLoot())
+    assert.is_true(MakeSpace.Scanner.HasLoot())
     MakeSpace.Scanner.ClearLoot()
-    assert.are.equal(false, MakeSpace.Scanner.HasLoot())
+    assert.is_false(MakeSpace.Scanner.HasLoot())
   end)
 
   it("does not ask for room when the loot joins a stack you carry", function()
     setUp({ [0] = { { id = 100, count = 5 } } }, { [0] = 0 }, { { id = 100, qty = 3 } })
     MakeSpace.Scanner.RefreshLoot()
     MakeSpace.Scanner.ScanAll()
-    assert.are.equal(false, MakeSpace.Scanner.MakeRoomSummary().active)
+    assert.is_false(MakeSpace.Scanner.MakeRoomSummary().active)
   end)
 
   it("asks for room when the stack is full, and marks the cheapest junk", function()
@@ -180,7 +194,7 @@ describe("Scanner: make room", function()
       { [0] = 0 }, { { id = 100, qty = 3 } })
     MakeSpace.Scanner.RefreshLoot()
     MakeSpace.Scanner.ScanAll()
-    assert.are.equal(true, MakeSpace.Scanner.MakeRoomSummary().active)
+    assert.is_true(MakeSpace.Scanner.MakeRoomSummary().active)
     assert.are.equal(true, MakeSpace.Scanner.GetResult(0, 2).glow) -- Torn Rag sells for least
     assert.is_nil(MakeSpace.Scanner.GetResult(0, 3).glow)
   end)
@@ -278,7 +292,7 @@ describe("Scanner: food that is spare because you carry better", function()
   it("is flagged at once when a level 45 food you can use is in the same bags", function()
     local result = foodResult({ 1200, 1201 })
     assert.are.equal("yellow", result.verdict)
-    assert.are.equal("Low-level food (level 35, you are 48)", result.reason)
+    assert.are.equal("Outleveled food (level 35, you are 48)", result.reason)
   end)
 
   it("of two foods at the same level, flags the one whose stack is worth less", function()
@@ -290,6 +304,85 @@ describe("Scanner: food that is spare because you carry better", function()
 
   it("is not flagged by a better food you cannot use yet", function()
     assert.is_nil(foodResult({ 1200, 1202 }).verdict)
+  end)
+end)
+
+describe("Scanner: a Use effect that shows up late", function()
+  local clock, line
+  local function scan()
+    setUp({ [0] = { { id = 904, bound = true } } }, { [0] = 0 })
+    _G.UnitLevel = function() return 48 end
+    _G.GetTime = function() return clock end
+    -- The tooltip answers are kept per item link, so the stub needs one
+    local plain = _G.C_Container.GetContainerItemInfo
+    _G.C_Container.GetContainerItemInfo = function(bag, slot)
+      local info = plain(bag, slot)
+      if info then info.hyperlink = "|cff1eff00|Hitem:904::::::::48:::::::::|h[Test Satchel]|h|r" end
+      return info
+    end
+    -- A better cloak is worn, so this one could not be an upgrade
+    _G.GetInventoryItemLink = function(_, slot) if slot == 15 then return 902 end end
+    _G.UIParent = {}
+    -- other tests leave a "Retrieving item information" first line behind
+    _G.RETRIEVING_ITEM_INFO, _G.MakeSpaceSkillTipTextLeft1 = nil, nil
+    _G.MakeSpaceSkillTipTextLeft2 = { GetText = function() return line end }
+    _G.CreateFrame = function()
+      return { SetOwner = function() end, ClearLines = function() end,
+               SetBagItem = function() end, NumLines = function() return 2 end }
+    end
+  end
+  local function verdictNow()
+    MakeSpace.Scanner.ScanAll()
+    return MakeSpace.Scanner.GetResult(0, 1).verdict
+  end
+
+  it("is picked up on a later scan when the first read missed the Use line", function()
+    clock, line = 0, "Soulbound"
+    scan()
+    assert.are.equal("yellow", verdictNow())          -- no effect line yet: low item level
+    line, clock = "Use: Opens the satchel.", 5
+    assert.is_nil(verdictNow())                        -- now it has an effect, so it is kept
+  end)
+
+  it("keeps a plain answer once it has stayed plain for the whole wait", function()
+    clock, line = 0, "Soulbound"
+    scan()
+    assert.are.equal("yellow", verdictNow())
+    clock = 31
+    assert.are.equal("yellow", verdictNow())          -- confirmed, no longer re-read
+    line, clock = "Use: Opens the satchel.", 40
+    assert.are.equal("yellow", verdictNow())
+  end)
+
+  it("keeps a found effect at once", function()
+    clock, line = 0, "Use: Opens the satchel."
+    scan()
+    assert.is_nil(verdictNow())
+    line, clock = "Soulbound", 5
+    assert.is_nil(verdictNow())
+  end)
+end)
+
+describe("Scanner: a quest item for the other faction", function()
+  it("is told apart from one your own faction's quests use", function()
+    local savedItems, savedInfo = MakeSpace and MakeSpace.Data and MakeSpace.Data.QuestItems, nil
+    setUp({ [0] = { { id = 1003 } } }, { [0] = 0 })
+    _G.UnitFactionGroup = function() return "Horde" end
+    MakeSpace.Data = MakeSpace.Data or {}
+    savedInfo = MakeSpace.Data.QuestInfo
+    MakeSpace.Data.QuestItems = { [1003] = { 77 } }
+    MakeSpace.Data.QuestInfo = { [77] = { 1, 1, "Bounty", "A" } }
+    MakeSpace.Scanner.ClearCache()
+    MakeSpace.Scanner.ScanAll()
+    local result = MakeSpace.Scanner.GetResult(0, 1)
+    assert.are.equal("yellow", result.verdict)
+    assert.are.equal("Only used by Alliance quests", result.reason)
+    -- the same item for an Alliance player is just a quest item in progress
+    _G.UnitFactionGroup = function() return "Alliance" end
+    MakeSpace.Scanner.ClearCache()
+    MakeSpace.Scanner.ScanAll()
+    assert.is_truthy(MakeSpace.Scanner.GetResult(0, 1).reason ~= "Only used by Alliance quests")
+    MakeSpace.Data.QuestItems, MakeSpace.Data.QuestInfo = savedItems, savedInfo
   end)
 end)
 
@@ -345,7 +438,7 @@ describe("Scanner: grays worth some silver", function()
     MakeSpace.Scanner.ScanAll()
     local cheapest, dearer = MakeSpace.Scanner.GetResult(0, 1), MakeSpace.Scanner.GetResult(0, 2)
     assert.are.equal("yellow", cheapest.verdict)
-    assert.are.equal("Cheapest gray, but worth 5s", cheapest.reason)
+    assert.are.equal("Cheapest gray, sells for 5s", cheapest.reason)
     assert.is_nil(dearer.verdict)
   end)
 
@@ -458,7 +551,7 @@ describe("Scanner: professions", function()
     _G.GetSkillLineInfo = function() return "Professions", true, false end
     MakeSpace.Scanner.ClearCache()
     local explained = MakeSpace.Scanner.Explain(100)
-    assert.are.equal(false, explained.professionsKnown)
+    assert.is_false(explained.professionsKnown)
   end)
 end)
 
@@ -474,13 +567,13 @@ describe("Scanner: repeatable quests", function()
 
   it("a finished one-time quest still counts as done", function()
     withQuest(false)
-    assert.are.equal(true, MakeSpace.Scanner.Explain(500).quests[1].done)
+    assert.is_true(MakeSpace.Scanner.Explain(500).quests[1].done)
     MakeSpace.Data.QuestItems = {}
   end)
 
   it("a finished repeatable quest never counts as done, so its items are kept", function()
     withQuest(true)
-    assert.are.equal(false, MakeSpace.Scanner.Explain(500).quests[1].done)
+    assert.is_false(MakeSpace.Scanner.Explain(500).quests[1].done)
     local result = MakeSpace.Scanner.GetResult(0, 1)
     assert.is_truthy(not result or result.verdict ~= "green")
     MakeSpace.Data.QuestItems = {}
@@ -583,7 +676,7 @@ describe("Scanner: make room with only a pricey gray in the bags", function()
     MakeSpace.Scanner.RefreshLoot()
     MakeSpace.Scanner.ScanAll()
     local gray = MakeSpace.Scanner.GetResult(0, 1)
-    assert.are.equal(true, gray.glow)
+    assert.is_true(gray.glow)
     assert.is_truthy(not gray.quiet)
     assert.are.equal("take", MakeSpace.Scanner.LootDecision(1))
     assert.are.equal("Odd Trinket", MakeSpace.Scanner.MakeRoomSummary().deleteNames[1])
@@ -593,7 +686,7 @@ describe("Scanner: make room with only a pricey gray in the bags", function()
     setUp({ [0] = { { id = 700 }, { id = 100 } } }, { [0] = 0 }, { { id = 1000, qty = 1 } })
     MakeSpace.Scanner.RefreshLoot()
     MakeSpace.Scanner.ScanAll()
-    assert.are.equal(true, MakeSpace.Scanner.GetResult(0, 1).glow)
+    assert.is_true(MakeSpace.Scanner.GetResult(0, 1).glow)
     assert.are.equal("consider", MakeSpace.Scanner.LootDecision(1))
   end)
 
@@ -645,7 +738,7 @@ describe("Scanner: make room with only a pricey gray in the bags", function()
   it("leaves the loot, keeps the dots, and names the junk it lost to", function()
     scanFull(500)
     local summary = MakeSpace.Scanner.MakeRoomSummary()
-    assert.are.equal(true, summary.active)
+    assert.is_true(summary.active)
     assert.are.equal(0, summary.deletes)
     assert.are.equal(1, summary.leaving)
     assert.are.equal("Odd Bauble", summary.cheapestJunkName)
@@ -662,7 +755,7 @@ describe("Scanner: make room with only a pricey gray in the bags", function()
     MakeSpace.Scanner.RefreshLoot()
     MakeSpace.Scanner.ScanAll()
     assert.are.equal("consider", MakeSpace.Scanner.LootDecision(1))
-    assert.are.equal(true, MakeSpace.Scanner.GetResult(0, 1).glow)
+    assert.is_true(MakeSpace.Scanner.GetResult(0, 1).glow)
   end)
 end)
 
@@ -730,14 +823,14 @@ describe("Scanner: deleting while the loot window is open", function()
       { { id = 500, qty = 1 }, { id = 500, qty = 1 } })
     MakeSpace.Scanner.RefreshLoot()
     MakeSpace.Scanner.ScanAll()
-    assert.are.equal(true, MakeSpace.Scanner.GetResult(0, 1).glow)
-    assert.are.equal(true, MakeSpace.Scanner.GetResult(0, 2).glow)
+    assert.is_true(MakeSpace.Scanner.GetResult(0, 1).glow)
+    assert.is_true(MakeSpace.Scanner.GetResult(0, 2).glow)
 
     bags[0][1] = false
     freeByBag[0] = 1
     MakeSpace.Scanner.ScanAll()
     assert.is_nil(MakeSpace.Scanner.GetResult(0, 1))
-    assert.are.equal(true, MakeSpace.Scanner.GetResult(0, 2).glow)
+    assert.is_true(MakeSpace.Scanner.GetResult(0, 2).glow)
     assert.is_nil(MakeSpace.Scanner.GetResult(0, 3) and MakeSpace.Scanner.GetResult(0, 3).glow)
   end)
 end)
@@ -767,7 +860,7 @@ describe("Scanner: bandages by what they heal", function()
   it("reads the heal amount and flags a weak bandage", function()
     local result = resultFor("Use: Heals 400 damage over 8 sec. Must remain stationary while channeling.", 4500)
     assert.are.equal("yellow", result.verdict)
-    assert.are.equal("Weak bandage (heals 9%)", result.reason)
+    assert.are.equal("Weak bandage, heals 9% of your health", result.reason)
   end)
 
   it("reads a heal amount with a thousands separator", function()
@@ -807,10 +900,10 @@ describe("Scanner: the best bandage you can make", function()
     local heavyRecipe = recipeOf("Heavy Wool Bandage")
     known = {}
     MakeSpace.Scanner.BestBandageChanged()
-    assert.are.equal(false, MakeSpace.Scanner.BestBandageChanged())
+    assert.is_false(MakeSpace.Scanner.BestBandageChanged())
     known[heavyRecipe] = true
-    assert.are.equal(true, MakeSpace.Scanner.BestBandageChanged())
-    assert.are.equal(false, MakeSpace.Scanner.BestBandageChanged())
+    assert.is_true(MakeSpace.Scanner.BestBandageChanged())
+    assert.is_false(MakeSpace.Scanner.BestBandageChanged())
   end)
 
   it("is nobody's suggestion when the game cannot say", function()

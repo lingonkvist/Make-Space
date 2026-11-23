@@ -16,7 +16,7 @@ end
 describe("MakeRoom.Plan", function()
   it("does nothing when everything fits", function()
     local plan = MakeSpace.MakeRoom.Plan({ { slot = 1, value = 10 } }, {}, 2)
-    assert.are.equal(false, plan.active)
+    assert.is_false(plan.active)
     assert.are.equal(0, #plan.deletes)
   end)
 
@@ -25,7 +25,7 @@ describe("MakeRoom.Plan", function()
       { { slot = 1, value = 500 } },
       { junk("0:3", 0, 3, 40), junk("0:1", 0, 1, 10) },
       0)
-    assert.are.equal(true, plan.active)
+    assert.is_true(plan.active)
     assert.is_truthy(plan.take[1])
     assert.are.equal("0:1", plan.deletes[1].key)
   end)
@@ -74,7 +74,7 @@ describe("MakeRoom.Plan", function()
     local full = MakeSpace.MakeRoom.Plan(
       { { slot = 1, value = 5, stacks = true }, { slot = 2, value = 900 } },
       { junk("0:1", 0, 1, 10) }, 0)
-    assert.are.equal(true, full.active)
+    assert.is_true(full.active)
     assert.is_truthy(full.take[1])  -- the stacking piece is always fine to take
     assert.is_truthy(full.take[2])
     assert.are.equal(1, #full.deletes)
@@ -95,54 +95,54 @@ describe("MakeRoom.IsJunkCandidate", function()
   end
 
   it("offers a green you set yourself, whatever the item is, if it sells", function()
-    assert.are.equal(true, MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 3, classID = 0, isMarkedGreen = true })))
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 3, isMarkedGreen = true, sellPrice = 0 })))
+    assert.is_true(MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 3, classID = 0, isMarkedGreen = true })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 3, isMarkedGreen = true, sellPrice = 0 })))
   end)
 
   it("never offers an item you kept or flagged, even with a green mark in the data", function()
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ isKept = true, isMarkedGreen = true })))
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ isFlagged = true })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ isKept = true, isMarkedGreen = true })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ isFlagged = true })))
   end)
 
   it("accepts grays and plain whites that sell", function()
-    assert.are.equal(true, MakeSpace.MakeRoom.IsJunkCandidate(item()))
-    assert.are.equal(true, MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 1 })))
+    assert.is_true(MakeSpace.MakeRoom.IsJunkCandidate(item()))
+    assert.is_true(MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 1 })))
   end)
 
   it("offers a white only when the game files it as Junk", function()
     assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 1, subClassID = 2 }))) -- a companion
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 1, classID = 11 })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 1, classID = 11 })))
   end)
 
   it("rejects items that cannot be sold", function()
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ sellPrice = 0 })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ sellPrice = 0 })))
   end)
 
   it("rejects consumables, trade goods, recipes, reagents and quest items", function()
     for _, class in ipairs({ 0, 5, 7, 9, 12 }) do
-      assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ classID = class })))
+      assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ classID = class })))
     end
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ questItemQuestIDs = { 1 } })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ questItemQuestIDs = { 1 } })))
   end)
 
   it("rejects the hearthstone and profession tools", function()
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ id = 6948 })))
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ id = 2901 })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ id = 6948 })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ id = 2901 })))
   end)
 
   it("rejects items the player marked", function()
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ isKept = true })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ isKept = true })))
   end)
 
   it("offers white gear only when it is already called safe", function()
     local gear = item({ quality = 1, classID = 4, isEquippable = true })
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(gear))
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(gear, { verdict = "yellow" }))
-    assert.are.equal(true, MakeSpace.MakeRoom.IsJunkCandidate(gear, { verdict = "green" }))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(gear))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(gear, { verdict = "yellow" }))
+    assert.is_true(MakeSpace.MakeRoom.IsJunkCandidate(gear, { verdict = "green" }))
   end)
 
   it("rejects greens and better", function()
-    assert.are.equal(false, MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 2 })))
+    assert.is_false(MakeSpace.MakeRoom.IsJunkCandidate(item({ quality = 2 })))
   end)
 end)
 
@@ -167,7 +167,7 @@ describe("MakeRoom quieting", function()
   it("holds back the dot but keeps the verdict for the tooltip", function()
     local original = { verdict = "green", reason = "x" }
     local quiet = MakeSpace.MakeRoom.QuietResult(original)
-    assert.are.equal(true, quiet.quiet)
+    assert.is_true(quiet.quiet)
     assert.are.equal("green", quiet.verdict)
     assert.is_nil(original.quiet)
   end)
@@ -223,7 +223,7 @@ describe("Make room banner text", function()
 
   it("says so when there is no junk to delete at all", function()
     local text = banner({ active = true, deletes = 0, leaving = 1 })
-    assert.are.equal("Bags full, nothing safe to delete", text)
+    assert.are.equal("Bags full: nothing safe to delete", text)
   end)
 
   it("says nothing when every piece of loot is taken without a deletion", function()

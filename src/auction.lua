@@ -1,14 +1,14 @@
 -- MakeSpace: what the auction house pays for an item, as the verdict reads it.
--- Pure, like the verdict. The limit curves and per-kind settings live in
--- src/curves.lua, the live prices in src/live.lua, the shipped snapshot in
--- data/auction_prices_*.lua (one file per market). This module joins them into one answer per item:
+-- Pure, like the verdict. Joins the limit curves (src/curves.lua), live prices
+-- (src/live.lua) and the shipped snapshot (data/auction_prices_*.lua, one file per
+-- market) into one answer per item:
 --   CeilingFor    the price to judge by, and where it came from
 --   SellLimit     the most it may pay and still read as "just vendor it"
 --   Blocker       why a green must not stand (auction pays more)
 --   PriceLine     the tooltip line for a hint that suggests the auction house
 --   SlotValueIfKnown, SaleValue   what a stack or one item fetches
 --   SteadyValue   what one item fetches for weighing loot against junk, trusting
---                 only a live Auctionator price that has held steady
+--                 only a live price that has held steady
 
 MakeSpace = MakeSpace or {}
 MakeSpace.Auction = {}
@@ -59,10 +59,10 @@ local function bonusKey(link)
   return table.concat(ids, "-")
 end
 
---- The auction ceiling for this very item. Random-suffix gear is one item id
--- with very different prices, so when the data lists versions of the item,
--- only the player's own version counts: a version the data has no price for
--- gives nothing (it may be the rare, expensive one), never the item's price.
+--- The auction ceiling for this very item. Random-suffix gear is one item id with
+-- very different prices, so when the data lists versions only the player's own
+-- counts: a version with no price gives nothing (it may be the rare, expensive
+-- one), never the item's price.
 -- @return number|nil ceiling, string source ("version", "item" or "unknown")
 local function snapshotCeilingFor(item)
   local data = MakeSpace.Data or {}
@@ -76,11 +76,10 @@ local function snapshotCeilingFor(item)
   return prices and prices[item.id], "item"
 end
 
--- A fresh price from the player's own auction house (item.livePrice, set by the
--- scanner only when Auctionator saw the item in the last few days). It is the
--- lowest listing, so one cheap listing can make an item look worth less than it
--- is. The snapshot is the check: a live price far below the snapshot's cheap end
--- is not trusted, and the careful snapshot rules decide instead.
+-- A fresh price from the player's own auction house (item.livePrice, set only when
+-- Auctionator saw the item in the last few days). It is the lowest listing, so one
+-- cheap listing can make an item look worth less than it is: a live price far below
+-- the snapshot's cheap end is not trusted, and the careful snapshot rules decide.
 local LIVE_LOWBALL_FRACTION = 0.5
 -- Days: a live price with no snapshot price next to it must be this fresh.
 local LIVE_UNBACKED_MAX_AGE_DAYS = 1
@@ -109,11 +108,10 @@ local function liveCeiling(item)
   return live
 end
 
--- A version's snapshot price is the pricey end of that version (the 75th
--- percentile of its listings, build_auction_prices.py), a margin kept on purpose
--- to be careful. Its cheap end, about what a seller gets, is roughly this
--- fraction of it. A live price can bring the ceiling of a versioned item down to
--- this floor and no further, since Auctionator's price is the cheapest version's.
+-- A version's snapshot price is the pricey end of that version (75th percentile,
+-- build_auction_prices.py), kept on purpose to be careful. Its cheap end is roughly
+-- this fraction of it. A live price can lower a versioned item's ceiling to this
+-- floor and no further, since Auctionator's price is the cheapest version's.
 local VERSION_FLOOR_FRACTION = 0.6
 
 -- Versions the data must list before the dearest of them stands in for a
@@ -121,10 +119,9 @@ local VERSION_FLOOR_FRACTION = 0.6
 -- was seen well; a single one proves nothing about the rest.
 local MIN_LISTED_VERSIONS = 3
 
---- The dearest listed version of a random-suffix item, for the player's version
--- when the data has no price for it. Most such items cost about the same in
--- every version or are all worth selling, and the dearest version can only keep
--- a green away, never give one that the dearest version would not.
+--- The dearest listed version of a random-suffix item, for when the data has no
+-- price for the player's version. Most such items cost about the same in every
+-- version, and the dearest can only keep a green away, never give one.
 -- @return number|nil
 local function dearestVersionCeiling(item)
   local data = MakeSpace.Data or {}
@@ -154,11 +151,10 @@ local function ceilingFor(item)
     if dearest then snapshot, source = dearest, "versions" end
   end
   if not live then return snapshot, source end
-  -- Auctionator files every version of a random-suffix item under one key, so
-  -- its price is the cheapest version's. For a versioned item (the link carries
-  -- bonus ids) it may lower the snapshot's price only down to a floor: the
-  -- snapshot is the pricey end of this version (see VERSION_FLOOR_FRACTION), and
-  -- the floor is roughly its cheap end. With no snapshot price it decides nothing.
+  -- Auctionator files every version of a random-suffix item under one key, so its
+  -- price is the cheapest version's. For a versioned item (the link has bonus ids) it
+  -- may lower the snapshot's price only to a floor (see VERSION_FLOOR_FRACTION). With
+  -- no snapshot price it decides nothing.
   if item.bonusKey then
     if not snapshot or source == "unknown" then return snapshot, source end
     local fraction = source == "item" and LIVE_LOWBALL_FRACTION or VERSION_FLOOR_FRACTION
@@ -179,12 +175,11 @@ local function saleValue(item)
   return math.max(vendor, math.floor(MakeSpace.Curves.SaleValue(ceiling, source, MakeSpace.Curves.TypeOf(item))))
 end
 
---- What one item is worth when loot is weighed against the junk it would replace.
--- The vendor price, unless Auctionator has a fresh price that the recent days all
--- agree on (see Live.IsSteady): then what that fetches after the auction cut, if
--- more. A shipped snapshot price, a lone reading or a versioned item (Auctionator
--- files every version under one key) never counts, so the value is never the
--- optimistic side of a guess.
+--- What one item is worth when loot is weighed against the junk it would replace:
+-- the vendor price, or more when Auctionator has a fresh price that the recent days
+-- agree on (see Live.IsSteady), after the auction cut. A snapshot price, a lone
+-- reading or a versioned item never counts, so the value is never the optimistic
+-- side of a guess.
 -- @return number copper per item
 local function steadyValue(item)
   local vendor = item.sellPrice or 0
@@ -195,11 +190,9 @@ local function steadyValue(item)
 end
 
 --- "Vendor 5c, auction about 8s": the real prices, not the rounded ones.
--- The auction side of a price is a guess, so it is shown in whole silver:
--- "4s 87c" reads as "5s". Under 10s it rounds to the nearest silver (a guess
--- of 1s 3c is "1s", not "2s"), from 10s up it rounds up so a dear item is
--- never undersold. Under a silver the copper stays, since rounding 20c to 1s
--- would be a different guess.
+-- The auction side is a guess, so it is shown in whole silver. Under 10s it rounds to
+-- the nearest silver (1s 3c is "1s"); from 10s up it rounds up so a dear item is never
+-- undersold. Under a silver the copper stays.
 local COPPER_PER_SILVER = 100
 local ROUND_UP_FROM = 10 * COPPER_PER_SILVER
 local function roundToSilver(copper)
@@ -231,14 +224,13 @@ local function dearestReading(item)
   return reading
 end
 
---- Why a green on a vendor-trash item must not stand: the auction house may pay
--- more than a vendor. Only for items that can be traded at all. Where the data
--- has no price for an item, nobody lists it often enough to matter, so the green
--- stands. A version the data does not know (it may be the pricey one) is
--- silenced, as in the sell rule.
+--- Why a green on a vendor-trash item must not stand: the auction may pay more than a
+-- vendor. Only for tradeable items. With no price in the data nobody lists it often
+-- enough to matter, so the green stands; a version the data does not know (it may be
+-- the pricey one) is silenced, as in the sell rule.
 -- @return string|nil the reason it is blocked, for /makespace why
--- @return string|nil a short "Vendor 5c, auction about 8s" for the tooltip, only
---   when the block is about the price (not an unknown version or market)
+-- @return string|nil a short "Vendor 5c, auction about 8s" for the tooltip, only when
+--   the block is about the price (not an unknown version or market)
 local function blocker(item, state)
   if not isTradeable(item) then return nil end
   local ceiling, source = ceilingFor(item)
@@ -280,15 +272,14 @@ local function staleSaysCheap(item, state)
   return raised <= sellLimit(item, "live", state)
 end
 
---- The price line for a hint that suggests selling at the auction house. It
--- only shows when the auction is worth it: the price is at least the listing
--- floor and clearly above what the same sell check allows over a vendor. A
--- price that is known but not worth it returns nothing and says so, so the hint
--- can stop suggesting the auction house. Never blocks anything.
+--- The price line for a hint that suggests the auction house. It shows only when the
+-- auction is worth it: at least the listing floor and clearly above what the sell
+-- check allows over a vendor. A price that is known but not worth it returns nothing
+-- and says so, so the hint can stop suggesting the auction. Never blocks anything.
 -- @return string|nil the price line
 -- @return boolean true when the price is known and not worth listing
--- @return boolean|nil true when the line shows Auctionator's own number, which
---   its tooltip already shows, so a repeat of it adds nothing
+-- @return boolean|nil true when the line is Auctionator's own number, which its
+--   tooltip already shows
 local function priceLine(item, state)
   if not isTradeable(item) then return nil end
   local ceiling, source = ceilingFor(item)
@@ -312,11 +303,10 @@ local function priceLine(item, state)
   return nil, true
 end
 
---- What the stack in this slot fetches, careful about the auction side, or nil
--- when the price is not known. A price counts as known only when the data lists
--- the item: a missing price means nobody lists it, which may mean rare, so it is
--- never read as "worth little". An item that cannot be traded is worth its
--- vendor price.
+--- What the stack in this slot fetches, careful about the auction side, or nil when the
+-- price is not known. A price is known only when the data lists the item: a missing one
+-- means nobody lists it, which may mean rare, so it is never read as "worth little". An
+-- item that cannot be traded is worth its vendor price.
 -- @return number|nil copper for the whole slot
 local function slotValueIfKnown(item, state)
   local vendor = item.sellPrice or 0

@@ -10,11 +10,9 @@ local function say(text)
   print(PREFIX .. text)
 end
 
---- Turn the text after a command into an item ID.
--- Accepts a shift-clicked item link, a bare numeric ID, or an item name
--- (names only resolve for items the client has cached, such as bag items).
--- @param argument   string          Text after the command word
--- @param lookupLink function|nil    name -> item link, injected for tests
+--- Turn the text after a command into an item ID: a shift-clicked link, a bare
+-- numeric ID, or an item name (only for items the client has cached).
+-- @param lookupLink function|nil  name -> item link, injected for tests
 -- @return number|nil
 function MakeSpace.Commands.ParseItemID(argument, lookupLink)
   if not argument or argument == "" then return nil end
@@ -176,11 +174,9 @@ function MakeSpace.Commands.PrintSummary()
   end
 end
 
---- What the game says about every item in the potion and bandage tables, one
--- line per tier, so the tables can be checked against the real client.
--- @param api table  { itemInfo(id) -> name, minLevel, bindType (nil until the
---                   game has the item), isKnown(spellID) -> boolean|nil,
---                   bestBandageID }
+--- What the game says about every item in the potion and bandage tables, one line
+-- per tier, so the tables can be checked against the real client.
+-- @param api table  { itemInfo(id), isKnown(spellID), bestBandageID }
 -- @return table list of strings
 function MakeSpace.Commands.TierLines(api)
   local data = MakeSpace.Data and MakeSpace.Data.ConsumableTiers
@@ -372,6 +368,22 @@ local COMMAND_HANDLERS = {
       print("  bandage heal, read from the tooltip: " .. tostring(item.healAmount or "not found")
         .. ", your max health: " .. tostring(explained.state and explained.state.maxHealth or "unknown"))
     end
+    if item.isEquippable and explained.fromBag then
+      -- Gear with a Use or on-hit effect is kept for what it does; show what the
+      -- scanner saw, and what the game itself says, when it found none.
+      print("  effect, read from the tooltip: " .. (item.hasEffect and "found" or "none found"))
+      local getSpell = (_G.C_Item and _G.C_Item.GetItemSpell) or _G.GetItemSpell
+      if getSpell then
+        local ok, spellName, spellID = pcall(getSpell, item.link or item.id)
+        print("  the game's item spell: " .. ((ok and (spellName or spellID))
+          and (tostring(spellName) .. " (spell " .. tostring(spellID) .. ")") or "none"))
+      end
+      if not item.hasEffect and MakeSpace.Scanner.TooltipTextOf then
+        for _, text in ipairs(MakeSpace.Scanner.TooltipTextOf(item.id) or {}) do
+          print("    tooltip: " .. text)
+        end
+      end
+    end
     if item.classID == 9 and explained.fromBag then
       print("  skill needed, read from the tooltip: " .. tostring(item.requiredSkill or "not found"))
       local ok, summary = pcall(MakeSpace.Scanner.ProfessionSummary)
@@ -415,6 +427,11 @@ local COMMAND_HANDLERS = {
       .. ", take " .. plan.takes .. ", delete " .. plan.deletes)
     if plan.lootItems > 0 and not plan.active then
       print("  Not active because everything fits in your free slots.")
+    end
+    local stats = MakeSpace.LootStats
+    if stats and stats.events > 0 then
+      print("  Since the window opened: " .. stats.events .. " loot events, " .. stats.scans .. " rescans"
+        .. (stats.lastScanMs and string.format(", last rescan %.1f ms", stats.lastScanMs) or ""))
     end
   end,
   glow = function()
@@ -464,9 +481,8 @@ local COMMAND_HANDLERS = {
 }
 
 --- Split what was typed after /makespace into a command word and its argument.
--- The command is the leading letters only, so an item shift-clicked straight
--- after the word ("why|cnIQ1:|Hitem:...") still splits where the link starts.
--- The argument keeps its original case (item names).
+-- The command is the leading letters only, so a link shift-clicked right after the
+-- word still splits where the link starts. The argument keeps its case.
 -- @return string, string  lower-case command ("" if none), argument
 function MakeSpace.Commands.SplitInput(msg)
   local text = (msg or ""):match("^%s*(.-)%s*$")

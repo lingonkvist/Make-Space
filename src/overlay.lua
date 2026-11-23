@@ -18,11 +18,10 @@ local TEXTURES = {
 -- average instead of a blur. The shapes are drawn at the size they should have on screen.
 local DOT_SIZE = 16
 -- Where the dot sits: on the slot's top right corner, a little over its frame like a
--- notification badge, so it breaks the slot's outline instead of sitting inside it.
--- The offsets are from the slot's corner to the dot's own corner, in pixels, right
--- and up. Slots are only about 5 px apart, so the dot may overhang by a pixel or two.
--- The dot is anchored by its centre (the corner offsets less half its size), so it
--- can swell around that centre without moving.
+-- notification badge. Offsets run from the slot's corner to the dot's own corner, in
+-- pixels, right and up; slots are only about 5 px apart, so the dot may overhang a
+-- pixel or two. The dot is anchored by its centre (the offsets less half its size) so
+-- it can swell around that centre without moving.
 local DOT_OFFSET_X = 3
 local DOT_OFFSET_Y = 2
 -- The dot lives on its own small frame this many levels above the slot, so it
@@ -39,12 +38,11 @@ local function makeDot(parent)
   return dot
 end
 
--- Glow for the slots to delete while making room for loot: a green wash, a
--- solid frame and a ring that breathe slowly together (about 1.2 seconds a
--- cycle, far below any flash threshold, and never fully off). Nothing else moves.
--- Blizzard's own action-button border: it ships with every client, so it
--- cannot go missing the way an addon file can. It is a light glow with the
--- colour left to us, so it is tinted green and added onto the slot.
+-- Glow for the slots to delete while making room for loot: a green wash, a solid
+-- frame and a ring that breathe slowly together (about 1.2 s a cycle, far below any
+-- flash threshold, never fully off). Nothing else moves. The texture is Blizzard's own
+-- action-button border, which ships with every client: a light glow with the colour
+-- left to us, so it is tinted green and added onto the slot.
 local GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
 local GLOW_COLOR = { 0.25, 1.0, 0.45 }
 local GLOW_SCALE = 1.9 -- frame size as a multiple of the slot, matches the texture
@@ -146,12 +144,11 @@ local function applyGlow(button, on, bagID, slotID)
   end
 end
 
--- At a vendor, the greens the vendor will buy swell and shrink slowly, so the
--- sellable junk stands out in a full bag. A cycle is just over a second, the dot
--- grows by about a seventh and comes back, and it stops the moment the vendor
--- window closes. The size is set by hand each frame (one shared clock, so every
--- dot breathes together) because an animation scales around its own origin and
--- the clients differ on how that is set.
+-- At a vendor, the greens it will buy swell and shrink slowly (a cycle just over a
+-- second, about a seventh larger), so sellable junk stands out in a full bag. It stops
+-- when the vendor window closes. The size is set by hand each frame from one shared
+-- clock, so every dot breathes together: an animation scales around its own origin,
+-- and the clients differ on how that is set.
 local PULSE_MAX_SCALE = 1.15
 local PULSE_SECONDS = 1.2
 local vendorOpen = false
@@ -268,12 +265,11 @@ local function getButtonDot(button)
   return dot
 end
 
--- The item menu: alt-right-click on an item button. (Shift is taken: shift-click
--- splits a stack.) The slot a button shows changes as buttons are recycled, so
--- it is remembered per paint, off the button itself, and read when the click
--- comes. The mouse-up script is hooked, not the click script: it fires for any
--- button whatever the bag addon registers for clicks, and a bag addon that sets
--- its own click script later cannot drop the hook.
+-- The item menu: alt-right-click on an item button (shift is taken by stack
+-- splitting). Buttons are recycled, so the slot a button shows is remembered per paint
+-- and read when the click comes. The mouse-up script is hooked, not the click script:
+-- it fires whatever the bag addon registers for clicks, and a later click script
+-- cannot drop the hook.
 local slotByButton = setmetatable({}, { __mode = "k" })
 local menuHooked = setmetatable({}, { __mode = "k" })
 
@@ -327,11 +323,10 @@ local MAX_FRAMES = NUM_CONTAINER_FRAMES or 13
 
 local bankPanelFrames = setmetatable({}, { __mode = "k" })
 
--- The client's own EnumerateValidItems is avoided where the frame offers another
--- way: it asks the frame for its size, and the client writes that size onto the
--- frame when it is unset. A write made from here is marked as the addon's, and the
--- next secure action that reads it (right-clicking an item to use it) can be
--- blocked. So the buttons are read off the frame's own fields, which only reads.
+-- The client's EnumerateValidItems is avoided where possible: it makes the client write
+-- the frame's size, and a write made from here counts as the addon's and can block the
+-- next secure action that reads it (right-clicking an item to use it). Buttons are read
+-- off the frame's own fields instead.
 local function shownChildren(parent, wanted)
   local buttons = {}
   if parent.GetChildren then
@@ -504,10 +499,9 @@ end
 -- ---------------------------------------------------------------------------
 -- Adapter 2: Baganator
 -- ---------------------------------------------------------------------------
--- Baganator also draws other characters' bags and banks (through Syndicator)
--- with the same buttons. Whenever it tells us which item it is showing, check
--- that it is the item in that real slot, so a remembered item is never judged
--- against a live slot that happens to share its number.
+-- Baganator also draws other characters' bags and banks (through Syndicator) with the
+-- same buttons. When it says which item it shows, check that it is the item in that
+-- real slot, so a remembered item is never judged against a live slot with the same number.
 local function itemIDOfLink(link)
   local instant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
   return instant and (instant(link)) or nil
@@ -530,13 +524,10 @@ local function initBaganator()
     return false
   end
 
-  -- onUpdate: called by Baganator whenever an item button is refreshed.
-  -- details.itemLocation contains the bagID and slotIndex.
-  -- The widget Baganator hands us is only a placeholder. The dot itself is
-  -- anchored by us to the button's corner (as on the other bag addons), because
-  -- Baganator would keep the widget inside its own corner. We still answer true
-  -- when the dot shows, so the corner stays ours and no other widget of Baganator's
-  -- is drawn under it.
+  -- onUpdate: called by Baganator whenever an item button is refreshed;
+  -- details.itemLocation has the bagID and slotIndex. The widget it hands us is only a
+  -- placeholder: the dot is anchored by us to the button's corner (as on the other bag
+  -- addons), and we still answer true when it shows so no other widget is drawn under it.
   local function onUpdate(placeholder, details)
     -- A button that shows something we do not judge (another character's item,
     -- an empty slot) must not keep a delete glow from what it showed before.
@@ -595,11 +586,10 @@ end
 -- ---------------------------------------------------------------------------
 -- Adapter 3: EllesmereUI Bags
 -- ---------------------------------------------------------------------------
--- A bag replacement with no plugin API. Its slots are item-template buttons
--- kept in a pool, and each button's parent frame carries the bag ID, the same
--- as Blizzard's. The pool is read from the module's internals, which are
--- underscore-private: if the author renames them the dots stop and nothing
--- else breaks. RefreshInventory is the window's own repaint, so hook it.
+-- A bag replacement with no plugin API. Its slots are item-template buttons kept in a
+-- pool, and each button's parent frame carries the bag ID, as in Blizzard's. The pool
+-- is read from underscore-private internals: if the author renames them the dots stop
+-- and nothing else breaks. RefreshInventory is the window's own repaint, so hook it.
 local function ellesmereSlotPool()
   local modules = EllesmereUI and EllesmereUI._ModuleNS
   local bags = modules and modules["EllesmereUIBags"]
@@ -627,15 +617,14 @@ end
 -- ---------------------------------------------------------------------------
 -- Adapter 4: Bagnon
 -- ---------------------------------------------------------------------------
--- Bagnon builds every slot from one item class, Bagnon.Item, and refreshes a
--- slot through UpdateSecondary (older versions: UpdatePrimary or Update). Hook
--- that, the way Bagnon's own plugins do. The buttons are remembered so they
--- can be repainted when a scan finishes after Bagnon has already drawn them.
+-- Bagnon builds every slot from one item class, Bagnon.Item, and refreshes a slot
+-- through UpdateSecondary (older versions: UpdatePrimary or Update). Hook that, as
+-- Bagnon's own plugins do. Buttons are remembered so they can be repainted when a
+-- scan finishes after Bagnon has drawn them.
 --
--- Bagnon also shows other characters' bags, the bank while you are away, and
--- the guild bank and void storage through the same class. Only your own live
--- bags may get a dot: a cached or guild slot has the same bag number as one of
--- yours but holds something else, so those are painted as silent instead.
+-- The same class shows other characters' bags, the bank while you are away, the guild
+-- bank and void storage. Only your own live bags may get a dot: a cached or guild slot
+-- shares a bag number with one of yours but holds something else, so it is painted silent.
 local bagnonButtons = setmetatable({}, { __mode = "k" })
 
 local function bagnonItemClass()

@@ -2,47 +2,43 @@
 -- "just vendor it" verdict is withheld.
 --
 -- Two curves, because the two kinds of price are not equally trustworthy:
---   live      Auctionator's price from the player's own realm, read in the last
---             days. It is what the item costs now, so it is taken as it is.
---   snapshot  The price file shipped with MakeSpace: the cheap end of a market
---             (a region and faction) on the day it was read. Another realm and
---             another week can differ, so the price is read as possibly higher
---             than it says before it is compared.
+--   live      Auctionator's price from the player's own realm, read in the last days.
+--             It is what the item costs now, so it is taken as it is.
+--   snapshot  The price file shipped with MakeSpace: the cheap end of a market (region
+--             and faction) on the day it was read. Another realm and week can differ,
+--             so the price is read as possibly higher than it says.
 --
--- Both start from the same break-even. Selling at the auction house keeps 95%
--- of the price, and the deposit is only lost when a listing expires. So the
--- auction is worth a trip when 95% of its price clears the vendor price by a
--- margin: a share of the vendor price (large for cheap items, where a failed
--- listing costs more than it earns, small for dear ones) plus a flat amount for
--- the trip itself. Both parts grow with the vendor price, so the limit never
--- falls as the vendor price rises.
--- Three kinds of auction are treated on their own terms (MakeSpace.Curves.Config):
---   stackable  Sold by the stack, priced per unit, a tight market of undercutters.
+-- Both start from the same break-even: selling at auction keeps 95% of the price, and
+-- the deposit is lost when a listing expires. The auction is worth a trip when 95% of
+-- its price clears the vendor price by a margin: a share of the vendor price (large for
+-- cheap items, small for dear ones) plus a flat amount for the trip. Both parts grow
+-- with the vendor price, so the limit never falls as it rises.
+-- Three kinds of auction have their own settings (MakeSpace.Curves.Config):
+--   stackable  Sold by the stack, priced per unit: a tight market of undercutters.
 --   gear       Weapons and armor sold one at a time: random versions, slow sales.
---   other      Everything else sold one at a time (bags, recipes, quest items):
---              thin markets, so the price is the least certain.
+--   other      Everything else sold singly (bags, recipes, quest items): thin markets,
+--              so the price is the least certain.
 MakeSpace = MakeSpace or {}
 MakeSpace.Curves = {}
 
 local NET_OF_CUT = 0.95 -- what a seller keeps at a faction auction house
 
--- One row per kind of auction. Every figure here is the only place it is set.
---   shareCheap, shareDear, shareKnee   the margin over the vendor price as a share
---       of it: shareCheap for the cheapest items, shareDear for very dear ones,
---       halfway between at shareKnee copper
+-- One row per kind of auction; each figure is set only here.
+--   shareCheap, shareDear, shareKnee   the margin over the vendor price as a share of it:
+--       shareCheap for the cheapest items, shareDear for very dear ones, halfway at
+--       shareKnee copper
 --   flatMargin    copper for the trip itself
---   unitsPerListing   how many items one trip sells (a stack for stackables)
---   uncertainty   how much higher than the snapshot says the price may be on this
---       realm. Measured on the shipped data: one item priced in four markets comes
---       in at this multiple of its median at the 75th percentile (1.08 gear, 1.11
---       other, 1.16 stackables). One price in four is higher, so a green is given
---       when the price raised by this much is still no better than the vendor.
---   outlierFactor   a price above this many times the typical one is a lone
---       hopeful listing and is left out (src/live.lua); tight markets get less room
---   saleFraction   what a snapshot's cheap end is expected to fetch on a bad
---       realm (the 10th percentile of the same comparison: 0.71 to 0.78)
--- The margin shape and the trip cost are the same for every kind today; a row
--- only states what differs.
+--   unitsPerListing   items one trip sells (a stack for stackables)
+--   uncertainty   how much higher than the snapshot the price may be on this realm,
+--       measured on the shipped data as the 75th percentile of one item across four
+--       markets (1.08 gear, 1.11 other, 1.16 stackables). A green is given when the
+--       price raised by this much is still no better than the vendor.
+--   outlierFactor   a price above this many times the typical one is a lone hopeful
+--       listing and is left out (src/live.lua); tight markets get less room
+--   saleFraction   what a snapshot's cheap end is expected to fetch on a bad realm
+--       (10th percentile of the same comparison: 0.71 to 0.78)
+-- The margin shape and trip cost are the same for every kind today; a row only states
+-- what differs.
 local function row(own)
   local r = { shareCheap = 0.45, shareDear = 0.04, shareKnee = 600,
               flatMargin = 100, unitsPerListing = 1 }
@@ -125,9 +121,8 @@ function MakeSpace.Curves.Uncertainty(source, kind, snapshotAgeDays)
   return factor
 end
 
---- The most an item may fetch at auction (per item, copper) and still read as
--- "about the same as the vendor". At or under it, vendoring loses nothing worth
--- the trip.
+--- The most an item may fetch at auction (per item, copper) and still read as "about
+-- the same as the vendor": at or under it, vendoring loses nothing worth the trip.
 -- @param vendor number  vendor sell price of one item
 -- @param source string  "live", or a snapshot source ("item", "version", "versions")
 -- @param kind string  "stackable", "gear" or "other"

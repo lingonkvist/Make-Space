@@ -38,11 +38,9 @@ local function professionNamesOf(profEntries)
   return names
 end
 
--- Could this piece be an upgrade over something the player wears? Better in
--- rarity or in item level than any slot it fits counts, and so does an empty
--- slot. This is deliberately crude (no stats, no class): the point is only to
--- stay quiet when the answer is obviously "keep it", like a blue in the bag
--- while a white is equipped. Unknown gear (nil) is not treated as an upgrade.
+-- Could this piece be an upgrade over something worn? Crude on purpose (no stats,
+-- no class): it only keeps quiet when the answer is obviously "keep it", like a
+-- blue in the bag while a white is worn. An empty slot counts; unknown gear (nil) does not.
 local function couldBeUpgrade(item)
   local worn = item.equippedInSlots
   if not worn then return false end
@@ -57,11 +55,16 @@ local note = MakeSpace.Notes.Get
 MakeSpace.Verdict.Note = note
 
 --- A yellow verdict for a rule to return: verdict, reason, detail, tag, heading.
-local MARKED_REASON = "Marked by you"
-
 local function yellow(key, ...)
   local reason, heading = note(key, ...)
   return "yellow", reason, nil, nil, heading
+end
+
+--- A green verdict for a rule to return: verdict, reason, detail. The words are in notes.lua.
+local greenNote = MakeSpace.Notes.Green
+local function green(key, ...)
+  local reason, detail = greenNote(key, ...)
+  return "green", reason, detail
 end
 
 local PLACEHOLDER_ITEM_LEVEL = 1
@@ -99,23 +102,11 @@ local function evaluateLevelGap(item, state)
   local canBeGreen = (item.quality or 0) < RARE_QUALITY
   if (item.quality or 0) >= UNCOMMON_QUALITY and hasEnchanting(state) then canBeGreen = false end
 
-  if gap >= LEVEL_GAP_GREEN and canBeGreen then
-    if isItemLevel then
-      return "green", (note("very_low_item_level", compareLevel, state.level))
-    end
-    return "green", (note("very_low_level_gear", compareLevel, state.level))
+  local very = gap >= LEVEL_GAP_GREEN
+  if very and canBeGreen then
+    return green("outleveled_gear", isItemLevel, compareLevel, state.level)
   end
-  if gap >= LEVEL_GAP_GREEN then
-    if isItemLevel then
-      return yellow("very_low_item_level", compareLevel, state.level)
-    end
-    return yellow("very_low_level_gear", compareLevel, state.level)
-  end
-
-  if isItemLevel then
-    return yellow("low_item_level", compareLevel, state.level)
-  end
-  return yellow("low_level_gear", compareLevel, state.level)
+  return yellow("outleveled_gear", very, isItemLevel, compareLevel, state.level)
 end
 
 -- QuestInfo field indices (data/quest_items.lua is generated).
@@ -142,18 +133,12 @@ local function maskHas(mask, bit)
   return mask % (2 * bit) >= bit
 end
 
--- The cloth donation quests ("A Donation of Wool", Silk, Mageweave, Runecloth)
--- and the war effort turn-ins ("The Horde Needs Mageweave Bandages!", bars,
--- leather, herbs, food) are standing turn-ins, one for each city or kind. They
--- would keep every stack of that material quiet for good, so they do not count
--- as a use for an item.
+-- Standing turn-ins (the cloth donations, the war effort quests) would keep every
+-- stack of that material quiet for good, so they do not count as a use.
 local IGNORED_QUEST_PREFIXES = { "A Donation of ", "The Alliance Needs ", "The Horde Needs " }
 
--- The crafting writs ("Craftsman's Writ: Small Silk Pack", about 175 in Forever)
--- are orders from a customer that start from a writ item you have to be holding.
--- Without one in your log they ask nothing of you, but each names an item, so
--- they would hold every bag, robe and potion of that kind. They count only
--- while the quest is in your log.
+-- Crafting writs name an item but ask nothing of you until one is in your log; they
+-- would otherwise hold every bag, robe and potion of that kind. They count only while in the log.
 local LOG_ONLY_QUEST_PREFIX = "Craftsman's Writ"
 
 local function isLogOnlyQuest(questID)
@@ -192,19 +177,14 @@ function MakeSpace.Verdict.IsIgnoredQuest(questID)
   return false
 end
 
---- The quests that can keep an item for this player: the ones their faction can
--- take, leaving out the donation and war effort turn-ins.
--- Alliance and Horde versions of the same quest have separate IDs, so an
--- item used by both would otherwise wait forever on the other side's quest.
--- Quests with no faction data are kept: when unsure, the item stays needed.
--- Quests only other classes or races can take are left out too: a warrior's
--- quest never frees or holds anything for a mage.
+--- The quests that can keep an item for this player: those their faction, class
+-- and race can take, minus the standing turn-ins. Alliance and Horde versions have
+-- separate IDs, so an item used by both would otherwise wait on the other side's
+-- quest. Quests with no faction data are kept: when unsure, the item stays needed.
 -- @param questIDs table        quest IDs from QuestItems
 -- @param who  string|table|nil  "Alliance" or "Horde" (anything else keeps both), or
---                               { faction =, class = class token, race = race file,
---                                 skillLines = set of your profession IDs (nil: not known),
---                                 inLog = function(questID) }
--- @return table  the quests that can matter to this player (may be empty)
+--   { faction, class (token), race (file), skillLines (set; nil: not known), inLog = function(questID) }
+-- @return table  the quests that can matter (may be empty)
 function MakeSpace.Verdict.QuestsThatMatter(questIDs, who)
   local faction = type(who) == "table" and who.faction or who
   local classBit = type(who) == "table" and CLASS_BITS[who.class] or nil
@@ -235,6 +215,25 @@ function MakeSpace.Verdict.QuestsThatMatter(questIDs, who)
   return kept
 end
 
+local OTHER_FACTION = { Alliance = "Horde", Horde = "Alliance" }
+
+--- Is every quest that uses this item one only the other faction can take?
+-- Every quest needs a known faction: one open to both, or with no data, means the
+-- item may still be wanted.
+-- @param questIDs table|nil  all quests that use the item
+-- @param faction string  "Alliance" or "Horde"
+-- @return boolean
+function MakeSpace.Verdict.OnlyOtherFactionQuests(questIDs, faction)
+  local code = FACTION_CODES[faction]
+  local info = MakeSpace.Data.QuestInfo
+  if not (code and questIDs and #questIDs > 0 and info) then return false end
+  for i = 1, #questIDs do
+    local questFaction = info[questIDs[i]] and info[questIDs[i]][QUEST_INFO_FACTION]
+    if not questFaction or questFaction == code then return false end
+  end
+  return true
+end
+
 --- Build "[level] name" from QuestInfo, using runtimeName as override.
 -- The WoW API only returns quest names for quests still in the active log,
 -- so completed quests need the static name from QuestInfo.
@@ -258,11 +257,10 @@ local function isOrdinaryItem(item)
   return item.classID ~= nil and item.classID ~= QUEST_CLASS_ID and not item.questProvided
 end
 
--- A quest giver's note, crate or parchment is often not a quest-class item in the
--- game (the Cyclonian parchment is a consumable), yet nothing else wants it. So an
--- item that quests only hand out, never ask for, counts as quest-bound once it is
--- one of these kinds: a scroll or "other" consumable, or plain miscellaneous. Gear,
--- food and potions never do.
+-- Quest givers' notes, crates and parchments are often not quest-class items in the
+-- game, yet nothing else wants them. Items that quests only hand out count as
+-- quest-bound in these kinds: scrolls, "other" consumables and plain miscellaneous.
+-- Gear, food and potions never do.
 local PROVIDED_KINDS = { [0] = { [4] = true, [8] = true }, [15] = { [0] = true } }
 
 --- Is this a quest-provided note or crate that is safe once its quest is done?
@@ -277,7 +275,7 @@ local function evaluateCompletedQuestStarter(item)
   if not (item.startsQuestID and item.startsQuestCompleted) then return nil end
   local label = questLabel(item.startsQuestID, item.startsQuestName)
   if isOrdinaryItem(item) then return nil end
-  return "green", "Quest completed", label
+  return green("quest_completed", label)
 end
 
 local function evaluateVendorReagent(item, state)
@@ -301,15 +299,12 @@ local function evaluateVendorReagent(item, state)
   if profEntries and state.professionNames then
     local names = professionNamesOf(profEntries)
     if needsAnyOf(state.professionNames, names) then return nil end
-    if #names >= 3 then
-      return "green", "Vendor reagent (" .. #names .. " professions)"
-    end
-    return "green", "Vendor reagent (" .. table.concat(names, ", ") .. ")"
+    return green("vendor_reagent", names)
   end
 
   if not state.professionSkillLines then return nil end
   if needsAnyOf(state.professionSkillLines, vendorData) then return nil end
-  return "green", "Vendor reagent"
+  return green("vendor_reagent")
 end
 
 local function evaluateClassReagent(item, state)
@@ -369,6 +364,12 @@ local function heldByOpenQuest(item, state)
   return false
 end
 
+-- A quest you are on, or one this item starts, still wants a consumable: soft
+-- hints on it stay quiet. A quest you have not taken does not hold it.
+local function wantedByQuest(item, state)
+  return item.startsQuestID or (item.onOpenQuest and heldByOpenQuest(item, state))
+end
+
 local function evaluateTrivialQuestItem(item, state)
   if not item.questItemQuestIDs or item.allQuestObjectivesCompleted then return nil end
   if isOrdinaryItem(item) then return nil end
@@ -382,17 +383,14 @@ local function evaluateTrivialQuestItem(item, state)
   return verdict, reason, label, nil, heading
 end
 
--- An item only wanted by quests the player cannot do for a long while, so it
--- can wait in the bank. Two kinds of quest qualify:
---   far off: nobody is on a level 60 quest at level 30. This goes by the level
---     you must be to ACCEPT the quest (data/quest_availability.lua), never the
---     quest's own level: a level 60 war effort quest opens at level 1.
---   event: a Darkmoon Faire or holiday quest can only be done while the event
---     runs, whatever your level. MakeSpace cannot tell if the event is on, so it
---     only names the event.
--- Every open quest must be one of the two; a quest in your log, one within
--- reach or one with no data keeps the item in your bags. A plain material is
--- left alone when a recipe uses it, since it may be wanted sooner.
+-- An item wanted only by quests the player cannot do for a long while can wait in
+-- the bank. A quest qualifies when it is
+--   far off: judged by the level needed to ACCEPT it (data/quest_availability.lua),
+--     not its own level (a level 60 war effort quest opens at level 1); or
+--   event: a Darkmoon Faire or holiday quest, whatever your level (the addon cannot
+--     tell if the event is on, so it only names it).
+-- Every open quest must qualify; one in your log, within reach or with no data keeps
+-- the item in your bags. A plain material is left alone when a recipe uses it.
 local QUEST_DISTANT_GAP = 10
 
 local function evaluateDistantQuestItem(item, state)
@@ -458,10 +456,24 @@ local function evaluateQuestObjective(item)
   if isOrdinaryItem(item) then return nil end
   local count = #item.questItemQuestIDs
   if count > 1 then
-    return "green", "All " .. count .. " quests completed"
+    return green("quests_completed", count)
   end
   local label = questLabel(item.questItemQuestIDs[1], nil)
-  return "green", "Quest completed", label
+  return green("quest_completed", label)
+end
+
+-- A quest item for the other faction: nothing here can ever hand it in. Only the
+-- game's own quest items and plain miscellaneous drops count, since a quest that
+-- asks for cloth or a tool says nothing about the item's other uses.
+local MISC_CLASS_ID = 15
+local function evaluateOtherFactionQuestItem(item, state)
+  if not item.otherFactionQuestsOnly or item.questItemQuestIDs or item.startsQuestID then return nil end
+  if item.isEquippable then return nil end
+  local plainDrop = item.classID == MISC_CLASS_ID and item.subClassID == 0
+  if item.classID ~= QUEST_CLASS_ID and not plainDrop then return nil end
+  local other = OTHER_FACTION[state.faction or ""]
+  if not other then return nil end
+  return yellow("other_faction_quest", other)
 end
 
 local TRADE_GOODS_CLASS_ID = 7
@@ -537,18 +549,15 @@ function MakeSpace.Verdict.ColoredName(name, quality)
   return hex .. name .. "|r"
 end
 
---- The reason line for a gray. Only the cheapest gray keeps a dot, so it always
--- says it is the cheapest, which is why the one dot makes sense.
+--- The reason line for a gray. Only the cheapest gray keeps a dot, so it says so.
 -- @param value     number   what the stack sells for, in copper
--- @param isWorthSilver boolean  true for a gray above the safe-to-delete value:
---        the dot is yellow and the reason warns that it is worth something
+-- @param isWorthSilver boolean  a gray above the safe-to-delete value: yellow, and
+--   the reason warns that it is worth something
 function MakeSpace.Verdict.PoorQualityReason(value, isWorthSilver)
   if isWorthSilver then
     return note("gray_worth", MakeSpace.Verdict.FormatMoney(value))
   end
-  local label = "Cheapest gray"
-  if value == 0 then return label .. ", no vendor value" end
-  return label .. ", sells for " .. MakeSpace.Verdict.FormatMoney(value)
+  return (greenNote("cheapest_gray", value > 0 and MakeSpace.Verdict.FormatMoney(value) or nil))
 end
 
 -- Gray items. Cheap ones are safe to delete. One that sells for real money gets
@@ -571,8 +580,8 @@ local function evaluatePoorQuality(item, state)
   return "green", MakeSpace.Verdict.PoorQualityReason(value), nil, POOR_QUALITY_TAG
 end
 
---- Keep only the cheapest few poor-quality greens, so a bag full of grays
--- doesn't turn into a wall of dots. Deleting one lights up the next.
+--- Keep only the cheapest few grays green, so a full bag is not a wall of dots.
+-- Deleting one lights up the next.
 -- @param entries table  list of { key, bag, slot, value } for every gray with a dot
 -- @param maxDots number how many may stay green
 -- @return table  set of keys that should go silent
@@ -644,7 +653,7 @@ local function evaluateNoRecipeUse(item, state)
     return yellow("no_known_use", MakeSpace.Verdict.FormatMoney(value))
   end
 
-  return "green", "Not used for any quest or recipe"
+  return green("no_known_use")
 end
 
 -- Recipes and the reagents behind them. A recipe's item subclass says which
@@ -657,13 +666,11 @@ local RECIPE_PROFESSIONS = {
   [4] = "Blacksmithing", [5] = "Cooking", [6] = "Alchemy",
   [7] = "First Aid", [8] = "Enchanting", [9] = "Fishing",
 }
--- A reagent is "outleveled" once every recipe that needs it, counting what it
--- is turned into, has turned green: past that the chance of a skill-up is under
--- half, and it falls to nothing at gray. The data holds the skill where the last
--- of them turns green, which is also where its color changes in the profession
--- window. Data without it (older builds) falls back to the best recipe's
--- learnable-at skill, which is earlier, and the wording then only says the
--- recipes "use it".
+-- A reagent is "outleveled" once every recipe that needs it (counting what it is
+-- turned into) has turned green: past that, skill-ups are under half and fall to
+-- nothing at gray. The data holds the skill where the last one turns green. Older
+-- data falls back to the best recipe's learnable-at skill, which is earlier, and
+-- the wording then only says the recipes "use it".
 local OUTLEVELED_FALLBACK_GAP = 0
 -- A recipe you cannot learn yet gets the bank hint once it is this far out of
 -- reach. A profession you have stopped leveling has nothing "close", so for
@@ -671,11 +678,10 @@ local OUTLEVELED_FALLBACK_GAP = 0
 local RECIPE_SKILL_GAP = 25
 local RECIPE_IDLE_SKILL_GAP = 0
 local RECIPE_LEVEL_GAP = 3
--- A reagent counts as "a while away" when it is out of reach by this much. It
--- is wider than a recipe's gap because one reagent feeds many recipes. The gap
--- closes to the recipe gap once the profession has gone quiet (half the idle
--- time) and stays there when it is idle: a reagent is never banked on any
--- shortfall, because the tooltip already says what it is for.
+-- A reagent is "a while away" when out of reach by this much. It is wider than a
+-- recipe's gap because one reagent feeds many recipes. It shrinks to the recipe gap
+-- once the profession goes quiet (half the idle time) and stays there when idle. A
+-- reagent is never banked on any shortfall: the tooltip already says what it is for.
 local BANK_SKILL_GAP = 50
 local BANK_QUIET_SKILL_GAP = RECIPE_SKILL_GAP
 
@@ -703,13 +709,12 @@ local function evaluateRecipe(item, state)
   return nil
 end
 
--- Where a reagent is used, direct and through what it is turned into: copper
--- bars go into bronze bars, which smithing and engineering use far higher up.
--- ReagentChains (generated) holds the downstream uses. A use reached through a
--- conversion only counts when you have the profession whose recipe makes it: a
--- Blacksmith without Leatherworking cannot turn Light Leather into the Medium
--- Leather that smithing uses, so that use is nothing to them. The professions a
--- chain entry needs sit in its fifth field.
+-- Where a reagent is used, directly and through what it is turned into (copper
+-- bars go into bronze bars, which smithing and engineering use far higher up).
+-- ReagentChains (generated) holds the downstream uses. A use through a conversion
+-- counts only if you have the profession that makes it: a Blacksmith without
+-- Leatherworking cannot turn Light Leather into Medium Leather. The professions a
+-- chain entry needs are in its fifth field.
 local CHAIN_NEEDED = 5
 
 -- Can this player make every conversion on the way to this use? With the
@@ -725,10 +730,9 @@ local function chainReachable(entry, state)
   return true
 end
 
--- The uses as one list: the recipes that take the reagent directly, then the
--- ones that take something made from it, each use kept on its own.
--- nearOnly keeps just the first conversion (ReagentChainsNear), for the
--- tooltip; the verdict always follows the whole chain. Data built before the
+-- The uses as one list: direct recipes, then those that take something made from
+-- the reagent. nearOnly keeps just the first conversion (ReagentChainsNear), for
+-- the tooltip; the verdict always follows the whole chain. Data from before the
 -- near table existed falls back to the full chains.
 local function useList(itemID, state, nearOnly)
   local direct = MakeSpace.Data.ReagentProfessions and MakeSpace.Data.ReagentProfessions[itemID]
@@ -783,10 +787,8 @@ local function reagentSegments(itemID, state)
 end
 
 --- What the recipes say about a reagent for each profession you have, one line
--- each, for /makespace why. A use that needs a profession you lack is listed as
--- not counted, with the one that is missing.
--- @return table list of strings (empty when the item is no reagent or the
---         professions are not known)
+-- each, for /makespace why. A use needing a profession you lack is listed as not counted.
+-- @return table list of strings (empty when the item is no reagent or professions are unknown)
 function MakeSpace.Verdict.ReagentUseFacts(itemID, state)
   local direct = MakeSpace.Data.ReagentProfessions and MakeSpace.Data.ReagentProfessions[itemID]
   if not direct or not (state and state.professionNames and state.professionRanks) then return {} end
@@ -931,12 +933,11 @@ local function primaryProfessions(state)
   return total, crafting
 end
 
--- A crafting material that drops (no vendor sells it) and that none of your
--- professions use, directly or through what it becomes. It may still sell, so
--- the hint comes with the vendor and auction prices. Three things keep it quiet:
--- a free primary slot (you may still pick a profession that uses it), a use by
--- Cooking, First Aid or Fishing (anyone can learn those any time), and a bag of
--- only gathering professions (everything gathered is meant to be sold).
+-- A dropped crafting material (no vendor sells it) that none of your professions
+-- use, directly or through what it becomes. It may still sell, so the hint comes
+-- with prices. Three things keep it quiet: a free primary slot (you may still pick
+-- a profession that uses it), a use by Cooking, First Aid or Fishing (anyone can
+-- learn those), and a bag of only gathering professions (gathered goods are meant to be sold).
 local function evaluateOtherProfessionReagent(item, state)
   if item.classID ~= TRADE_GOODS_CLASS_ID then return nil end
   local entries = reagentUses(item.id, state)
@@ -1012,7 +1013,11 @@ end
 local STAT_SCROLLS = SCROLL_STAT
 local POTION_SUBCLASS = 1
 
-local CLASS_PLURALS_FOR_POTIONS = { WARRIOR = "Warriors", ROGUE = "Rogues" }
+local CLASS_PLURALS = {
+  WARRIOR = "Warriors", PALADIN = "Paladins", HUNTER = "Hunters",
+  ROGUE = "Rogues", PRIEST = "Priests", MAGE = "Mages",
+  WARLOCK = "Warlocks", SHAMAN = "Shamans", DRUID = "Druids",
+}
 
 -- Mana potions and drinks are no use to a class with no mana. The IDs are listed instead
 -- of matched by name, so it works in every language.
@@ -1037,11 +1042,9 @@ end
 -- reads the tooltip instead and says when an item restores mana and nothing else.
 local function evaluateManaConsumable(item, state)
   if not (isManaOnly(item.id) or item.restoresManaOnly == true) then return nil end
-  -- A quest you are on, or one this item starts, still wants it.
-  if item.startsQuestID then return nil end
-  if item.onOpenQuest and heldByOpenQuest(item, state) then return nil end
+  if wantedByQuest(item, state) then return nil end
   if not CLASSES_WITHOUT_MANA[state.playerClass or ""] then return nil end
-  return yellow("no_mana", CLASS_PLURALS_FOR_POTIONS[state.playerClass])
+  return yellow("no_mana", CLASS_PLURALS[state.playerClass])
 end
 
 -- A stat scroll for a stat your class gets nothing from: Intellect for a warrior
@@ -1051,12 +1054,11 @@ local function evaluateUselessStatScroll(item, state)
   if item.classID ~= CONSUMABLE_CLASS or item.subClassID ~= SCROLL_SUBCLASS then return nil end
   if SCROLL_STAT[item.id] ~= "intellect" then return nil end
   if not CLASSES_WITHOUT_INTELLECT[state.playerClass or ""] then return nil end
-  if item.startsQuestID then return nil end
-  if item.onOpenQuest and heldByOpenQuest(item, state) then return nil end
+  if wantedByQuest(item, state) then return nil end
   -- An Enchanter may still want it: some scrolls are reagents for Enchanting.
   local uses = MakeSpace.Data.ReagentProfessions and MakeSpace.Data.ReagentProfessions[item.id]
   if uses and hasEnchanting(state) then return nil end
-  return yellow("no_use_stat", CLASS_PLURALS_FOR_POTIONS[state.playerClass], "Intellect")
+  return yellow("no_use_stat", CLASS_PLURALS[state.playerClass], "Intellect")
 end
 
 -- The tiers of the healing and mana potions and of the bandages
@@ -1124,10 +1126,10 @@ function MakeSpace.Verdict.ConsumableLevel(item)
   return level
 end
 
---- Mark each food and scroll that is spare because of what else you carry:
--- a different one of its kind that you can already use and that is better, either
--- for a higher level or, at the same level, a stack worth more (stacks of one item
--- are added up). Sets item.betterInBags on every food and scroll in the list.
+--- Mark each food and scroll that is spare because of what else you carry: a
+-- different one of its kind that you can already use and that is better, for a
+-- higher level or, at the same level, a stack worth more (stacks of one item are
+-- added up). Sets item.betterInBags on every food and scroll in the list.
 -- @param items table  the items you carry, as the scanner builds them
 -- @param playerLevel number
 function MakeSpace.Verdict.MarkBetterInBags(items, playerLevel)
@@ -1165,11 +1167,9 @@ end
 
 local function evaluateOutleveledConsumable(item, state)
   if item.classID ~= CONSUMABLE_CLASS or not OUTLEVELED_SUBCLASSES[item.subClassID] then return nil end
-  -- Only a quest you are on, or one this item starts, holds it. A quest you
-  -- have not taken (a war effort turn-in for wool bandages) does not: these are
-  -- soft hints, and the item may be worth far more as a keepsake than as a hint.
-  if item.startsQuestID then return nil end
-  if item.onOpenQuest and heldByOpenQuest(item, state) then return nil end
+  -- A quest you have not taken (a war effort turn-in for wool bandages) does not
+  -- hold it: these are soft hints, and the item may be worth more as a keepsake.
+  if wantedByQuest(item, state) then return nil end
   -- An effect with its own level limit ("cannot be used above level 20", "cures
   -- diseases up to level 25") says when it stops working: the item's level
   -- tells nothing.
@@ -1236,12 +1236,6 @@ local CAN_USE_SUBCLASSES = {
   DRUID   = { [1] = true, [2] = true, [8] = true },
 }
 
-local CLASS_PLURALS = {
-  WARRIOR = "Warriors", PALADIN = "Paladins", HUNTER = "Hunters",
-  ROGUE = "Rogues", PRIEST = "Priests", MAGE = "Mages",
-  WARLOCK = "Warlocks", SHAMAN = "Shamans", DRUID = "Druids",
-}
-
 local function unwearableWording(subClassID)
   if ARMOR_SUBCLASS_NAMES[subClassID] then
     return "wear " .. ARMOR_SUBCLASS_NAMES[subClassID]
@@ -1269,12 +1263,8 @@ local function evaluateUnwearableWhite(item, state)
   local rule = usable[item.subClassID]
   if rule == true then return nil end
 
-  local reason = CLASS_PLURALS[state.playerClass] .. " can't " .. wording
-  if rule ~= nil then
-    if (state.level or 1) >= rule then return nil end
-    reason = reason .. " until level " .. rule
-  end
-  return "green", reason
+  if rule ~= nil and (state.level or 1) >= rule then return nil end
+  return green("class_cannot", CLASS_PLURALS[state.playerClass], wording, rule)
 end
 
 -- Weapons and ammo of a type your class can never learn. Read from the game's
@@ -1298,30 +1288,29 @@ local function classCannotUse(classes, state)
   return plural
 end
 
-local function evaluateUnusableWeapon(item, state)
-  if item.quality ~= COMMON_QUALITY or item.classID ~= WEAPON_CLASS_ID or item.hasEffect then return nil end
-  local wording = WEAPON_WORDING[item.subClassID]
-  local classes = MakeSpace.Data.WeaponClasses and MakeSpace.Data.WeaponClasses[item.subClassID]
+-- A green when the class can never use this kind of weapon or ammo.
+local function unusableByClass(wording, classes, state)
   local plural = wording and classCannotUse(classes, state)
   if not plural then return nil end
-  return "green", plural .. " can't use " .. wording
+  return green("class_cannot", plural, "use " .. wording)
+end
+
+local function evaluateUnusableWeapon(item, state)
+  if item.quality ~= COMMON_QUALITY or item.classID ~= WEAPON_CLASS_ID or item.hasEffect then return nil end
+  return unusableByClass(WEAPON_WORDING[item.subClassID],
+      MakeSpace.Data.WeaponClasses and MakeSpace.Data.WeaponClasses[item.subClassID], state)
 end
 
 local function evaluateUnusableAmmo(item, state)
   if item.quality ~= COMMON_QUALITY or item.classID ~= AMMO_CLASS_ID then return nil end
-  local wording = AMMO_WORDING[item.subClassID]
-  local classes = MakeSpace.Data.AmmoClasses and MakeSpace.Data.AmmoClasses[item.subClassID]
-  local plural = wording and classCannotUse(classes, state)
-  if not plural then return nil end
-  return "green", plural .. " can't use " .. wording
+  return unusableByClass(AMMO_WORDING[item.subClassID],
+      MakeSpace.Data.AmmoClasses and MakeSpace.Data.AmmoClasses[item.subClassID], state)
 end
 
--- A white piece of armor you have already out-geared. Every slot it could go
--- in must hold something better than white and at least as high in item
--- level, so the white can never be the upgrade. An empty slot, or an item the
--- game hasn't loaded yet, means no verdict (the scanner leaves
--- equippedInSlots nil then). Weapons are left out: which weapon you want
--- depends on proficiencies and class, not just level.
+-- A white piece of armor you have already out-geared: every slot it fits holds
+-- something better than white and at least as high in item level. An empty slot,
+-- or gear the game has not loaded (equippedInSlots nil), means no verdict. Weapons
+-- are left out: which one you want depends on proficiencies and class.
 local MISC_ARMOR_SUBCLASS_ID = 0 -- rings, necks, trinkets and the like: no armor value
 
 local function evaluateOutgearedWhite(item, state)
@@ -1346,20 +1335,14 @@ local function evaluateOutgearedWhite(item, state)
     if equipped[i].quality < UNCOMMON_QUALITY then return nil end
   end
 
-  return "green", "Worse than your equipped gear"
+  return green("worse_than_equipped")
 end
 
--- Every rule, in priority order (first one with a verdict wins). A rule only
--- proposes; Safety can drop a green. `overrides` names the protections a rule
--- is allowed to override, and each one is a decision, not a convenience:
---   quest rules may override "quest_item": finishing the quests lifts it
---   the reagent rules decide by profession or class themselves
--- Anything not listed is protected from that rule.
--- Tradeable green gear that the auction house pays about the vendor price for:
--- selling it to a vendor loses nothing. The price data (data/auction_prices_*.lua)
--- is a ceiling per item, so the call is only made when even that is close to the
--- vendor price. After the auction house's 5% cut, a higher price is worth a look.
--- Every check above this rule still runs first, and the upgrade check holds.
+-- Tradeable green gear the auction pays about the vendor price for: selling to a
+-- vendor loses nothing. The price data (data/auction_prices_*.lua) is a ceiling per
+-- item, so the call is only made when even that is near the vendor price (after the
+-- auction's 5% cut). Every check above this rule still runs first, and the upgrade
+-- check holds.
 local EQUIPMENT_CLASSES = { [2] = true, [4] = true }
 --- Everything the sell-at-vendor rule looks at, in one place: the rule and
 -- /makespace why both read this, so they cannot disagree.
@@ -1371,24 +1354,24 @@ local function checkSellAtVendor(item, state)
   if item.hasEffect then return nil end
   local money = MakeSpace.Verdict.FormatMoney
   local check = { passes = false, notes = {} }
-  local function note_(text) check.notes[#check.notes + 1] = "sell check: " .. text end
+  local function addNote(text) check.notes[#check.notes + 1] = "sell check: " .. text end
 
   local ceiling, source = Auction.CeilingFor(item)
   local _, ignored = Auction.LiveCeiling(item)
-  if ignored then note_(ignored) end
+  if ignored then addNote(ignored) end
   if source ~= "live" and Auction.SnapshotTooOld(state) then
-    note_("the price data is over " .. MakeSpace.Curves.STALE_SNAPSHOT_DAYS .. " days old, so no verdict")
+    addNote("the price data is over " .. MakeSpace.Curves.STALE_SNAPSHOT_DAYS .. " days old, so no verdict")
     return check
   end
   if source == "live" and item.liveSteady then
     local snapshot, snapshotSource = Auction.SnapshotCeilingFor(item)
     if snapshot and snapshotSource ~= "unknown" and ceiling < snapshot * Auction.LIVE_LOWBALL_FRACTION then
-      note_("live price " .. money(ceiling) .. " is far below the snapshot (" .. money(snapshot)
+      addNote("live price " .. money(ceiling) .. " is far below the snapshot (" .. money(snapshot)
           .. ") but steady over the last days, so it is trusted")
     end
   end
   if ceiling and item.bonusKey and type(item.livePrice) == "number" and source ~= "live" and not ignored then
-    note_("Auctionator's " .. money(item.livePrice) .. " is the cheapest version's price; it can lower the"
+    addNote("Auctionator's " .. money(item.livePrice) .. " is the cheapest version's price; it can lower the"
         .. " snapshot price of this version to " .. math.floor(Auction.VERSION_FLOOR_FRACTION * 100) .. "% of it at most")
   end
 
@@ -1398,46 +1381,44 @@ local function checkSellAtVendor(item, state)
   local considered = quality == UNCOMMON_QUALITY
       or (source == "live" and quality == RARE_QUALITY)
   if not considered then
-    note_("only green gear is considered without a live price (this is quality " .. tostring(quality) .. ")")
+    addNote("only green gear is considered without a live price (this is quality " .. tostring(quality) .. ")")
     return check
   end
   if item.isBound then
-    note_("soulbound, so it is not sold at auction")
+    addNote("soulbound, so it is not sold at auction")
     return check
   end
   if quality >= UNCOMMON_QUALITY and hasEnchanting(state) then
-    note_("you have Enchanting, so this gear may be worth disenchanting")
+    addNote("you have Enchanting, so this gear may be worth disenchanting")
     return check
   end
   if not item.sellPrice or item.sellPrice <= 0 then
-    note_("no vendor price")
+    addNote("no vendor price")
     return check
   end
 
-  local within = false
   if not ceiling then
     if source == "unknown" then
-      note_("this version has no auction price on file (bonus "
+      addNote("this version has no auction price on file (bonus "
           .. tostring(item.bonusKey) .. "), so no verdict")
     else
-      note_("no auction price on file (vendor " .. money(item.sellPrice) .. ")")
+      addNote("no auction price on file (vendor " .. money(item.sellPrice) .. ")")
     end
     return check
-  else
-    local limit = Auction.SellLimit(item, source, state)
-    check.ceiling, check.limit, check.source = ceiling, limit, source
-    within = ceiling <= limit
-    note_("vendor " .. money(item.sellPrice) .. ", auction ceiling " .. money(ceiling)
-        .. (source == "live" and " (live price from Auctionator)"
-            or source == "version" and " (this version, bonus " .. tostring(item.bonusKey) .. ")"
-            or source == "versions" and " (this version has no price on file, so the dearest listed version)"
-            or " (whole item)")
-        .. ", limit " .. money(limit)
-        .. (within and " (within)" or " (auction pays too much)"))
   end
+  local limit = Auction.SellLimit(item, source, state)
+  local within = ceiling <= limit
+  check.ceiling, check.limit, check.source = ceiling, limit, source
+  addNote("vendor " .. money(item.sellPrice) .. ", auction ceiling " .. money(ceiling)
+      .. (source == "live" and " (live price from Auctionator)"
+          or source == "version" and " (this version, bonus " .. tostring(item.bonusKey) .. ")"
+          or source == "versions" and " (this version has no price on file, so the dearest listed version)"
+          or " (whole item)")
+      .. ", limit " .. money(limit)
+      .. (within and " (within)" or " (auction pays too much)"))
 
   if not item.equippedInSlots then
-    note_("worn gear in this slot could not be read, so no verdict")
+    addNote("worn gear in this slot could not be read, so no verdict")
     return check
   end
   if couldBeUpgrade(item) then
@@ -1445,7 +1426,7 @@ local function checkSellAtVendor(item, state)
     for i = 1, #item.equippedInSlots do
       worn[#worn + 1] = "quality " .. item.equippedInSlots[i].quality .. " ilvl " .. item.equippedInSlots[i].itemLevel
     end
-    note_("could be an upgrade (this: quality " .. tostring(item.quality)
+    addNote("could be an upgrade (this: quality " .. tostring(item.quality)
         .. " ilvl " .. tostring(item.itemLevel) .. "; worn: " .. table.concat(worn, ", ") .. ")")
     return check
   end
@@ -1463,8 +1444,7 @@ local function evaluateSellAtVendor(item, state)
   end
   if not (check and check.passes) then return nil end
   local money = MakeSpace.Verdict.FormatMoney
-  return "green", "Vendor " .. money(item.sellPrice) .. ", auction "
-      .. (check.source == "live" and "about " or "up to ") .. money(check.ceiling)
+  return green("vendor_beats_auction", money(item.sellPrice), money(check.ceiling), check.source == "live")
 end
 
 --- The facts behind the sell-at-vendor rule for one item, as short lines for
@@ -1472,6 +1452,36 @@ end
 function MakeSpace.Verdict.SellAtVendorFacts(item, state)
   local check = checkSellAtVendor(item, state)
   return check and check.notes or {}
+end
+
+-- The only protections a hint may override when it turns into "worth very little":
+-- recipe_reagent (a reagent for a profession you do not use) and, for recipes,
+-- essential_item. A rule with worthlessIsGreen may name its own set in worthlessOverrides.
+local WORTHLESS_OVERRIDES = { recipe_reagent = true }
+local WORTHLESS_RECIPE_OVERRIDES = { recipe_reagent = true, essential_item = true }
+
+--- The rules, in the order they speak; the first with a verdict wins. A rule only
+-- proposes: Safety can drop a green, and `overrides` names the protections a green
+-- may lift, each one a decision (quest rules lift "quest_item"; reagent rules decide
+-- by profession or class themselves). Flags:
+--   scope               "consumable" (only consumables), "any" (everything); default: all but consumables
+--   steadyPricesOnly    the price line trusts a live price only once it has held steady
+--   checksAuction       a green is held back when the auction pays clearly more
+--   showsAuctionPrice   a yellow gets the price line, and may become "worth very little"
+--   worthlessIsGreen    a yellow whose stack is worth next to nothing becomes green
+--   worthlessOnlyForAuctionHints  ...but only a hint that says "this may sell"
+--   worthlessOverrides  protections that green may lift (default WORTHLESS_OVERRIDES)
+--   overrides           protections a green of this rule may lift
+local CONSUMABLE_CLASS_ID = 0
+
+--- Is this item judged by the consumable rules? Quest-provided notes and crates are not.
+local function isConsumable(item)
+  return item.classID == CONSUMABLE_CLASS_ID and not item.questProvided
+end
+
+local function ruleApplies(rule, consumable)
+  if rule.scope == "any" then return true end
+  return (rule.scope == "consumable") == consumable
 end
 
 local RULES = {
@@ -1487,17 +1497,29 @@ local RULES = {
     overrides = { quest_item = true } },
   { name = "quest_objective_done", evaluate = evaluateQuestObjective, checksAuction = true,
     overrides = { quest_item = true } },
-  { name = "item_hint",          evaluate = evaluateItemHint },
+  { name = "item_hint",          evaluate = evaluateItemHint, scope = "any" },
   { name = "trivial_quest_item", evaluate = evaluateTrivialQuestItem },
   { name = "distant_quest_item", evaluate = evaluateDistantQuestItem },
+  { name = "other_faction_quest", evaluate = evaluateOtherFactionQuestItem, showsAuctionPrice = true,
+    worthlessIsGreen = true, worthlessOverrides = { quest_item = true, recipe_reagent = true } },
   { name = "vendor_reagent",     evaluate = evaluateVendorReagent, checksAuction = true,
     overrides = { vendor_reagent = true, recipe_reagent = true } },
   { name = "class_reagent",      evaluate = evaluateClassReagent, checksAuction = true,
     overrides = { spell_reagent = true, recipe_reagent = true } },
-  { name = "openable",           evaluate = evaluateOpenable },
+  { name = "openable",           evaluate = evaluateOpenable, scope = "any" },
+  -- Consumables (food, drink, potions, bandages, scrolls) are used up in play, so
+  -- "you don't need this" is never safe to say: only these rules speak for them,
+  -- and only as yellow. They sell well, so the price line comes with the hint;
+  -- the first two trust a live Auctionator price only once it has held steady.
+  { name = "mana_consumable",    evaluate = evaluateManaConsumable, scope = "consumable",
+    showsAuctionPrice = true, steadyPricesOnly = true },
+  { name = "useless_stat_scroll", evaluate = evaluateUselessStatScroll, scope = "consumable",
+    showsAuctionPrice = true, steadyPricesOnly = true },
+  { name = "outleveled_consumable", evaluate = evaluateOutleveledConsumable, scope = "consumable",
+    showsAuctionPrice = true },
   { name = "recipe",             evaluate = evaluateRecipe, showsAuctionPrice = true,
-    worthlessIsGreen = true, worthlessNeedsHint = true,
-    worthlessOverridesRecipes = true },
+    worthlessIsGreen = true, worthlessOnlyForAuctionHints = true,
+    worthlessOverrides = WORTHLESS_RECIPE_OVERRIDES },
   { name = "distant_reagent",    evaluate = evaluateDistantReagent },
   { name = "outleveled_reagent", evaluate = evaluateOutleveledReagent, showsAuctionPrice = true,
     worthlessIsGreen = true },
@@ -1508,139 +1530,113 @@ local RULES = {
   { name = "sell_at_vendor",     evaluate = evaluateSellAtVendor },
 }
 
--- Only these protections may be overridden when a hint turns into "worth very
--- little": a reagent for a profession the player does not use is what
--- recipe_reagent guards, and a recipe for one is what essential_item (all
--- recipes) guards. Nothing else is let through.
-local WORTHLESS_OVERRIDES = { recipe_reagent = true }
-local WORTHLESS_RECIPE_OVERRIDES = { recipe_reagent = true, essential_item = true }
-
 --- Run one rule and apply the safety check to a green.
--- @return verdict, reason, detail, tag, blockedBy, heading, auctionNote, worthLittle, noteIsLive
--- worthLittle is true for a green that only says the stack is worth next to nothing.
--- noteIsLive is true when the price note is Auctionator's own number.
+-- @return table  { verdict, reason, detail, tag, heading, blockedBy, auctionNote,
+--   auctionNoteLive, worthLittle }. worthLittle: a green that only says the stack
+--   is worth next to nothing. auctionNoteLive: the note is Auctionator's own number.
 local function runRule(rule, item, state)
   local verdict, reason, detail, tag, heading = rule.evaluate(item, state)
+  local answer = { verdict = verdict, reason = reason, detail = detail, tag = tag, heading = heading }
   if verdict == "yellow" and rule.showsAuctionPrice then
-    local note, notWorth, noteIsLive = Auction.PriceLine(item, state)
-    if notWorth then
-      -- The auction pays too little to suggest it. When the whole stack is also
-      -- worth next to nothing, it is safe to just vendor it.
-      local hinted = reason:find("May sell at the auction house$") ~= nil
-      if rule.worthlessIsGreen and (hinted or not rule.worthlessNeedsHint) then
-        local value = Auction.SlotValueIfKnown(item, state)
-        if value and value <= worthLittleCopper(state)
-            and not MakeSpace.Safety.Blocker(item,
-                rule.worthlessOverridesRecipes and WORTHLESS_RECIPE_OVERRIDES or WORTHLESS_OVERRIDES) then
-          local ceiling, source = Auction.CeilingFor(item)
-          -- Say what the hint was ("Outleveled reagent, worth very little"), so the
-          -- green is not left with only its price.
-          local title = type(heading) == "table" and heading.title or heading
-          local why = type(title) == "string"
-              and (title .. ", " .. MakeSpace.Verdict.WORTH_LITTLE_REASON:lower())
-              or MakeSpace.Verdict.WORTH_LITTLE_REASON
-          return "green", why, nil, nil, nil, nil,
-              note or (ceiling and Auction.PriceNote(item, ceiling, source)) or nil, true
-        end
+    local priceLine = rule.steadyPricesOnly and Auction.SteadyPriceLine or Auction.PriceLine
+    local note, notWorth, noteIsLive = priceLine(item, state)
+    answer.auctionNote, answer.auctionNoteLive = note, noteIsLive
+    -- The auction pays too little to suggest it. When the whole stack is also
+    -- worth next to nothing, it is safe to just vendor it.
+    local hinted = type(heading) == "table" and heading.hintsAuction == true
+    if notWorth and rule.worthlessIsGreen and (hinted or not rule.worthlessOnlyForAuctionHints) then
+      local value = Auction.SlotValueIfKnown(item, state)
+      if value and value <= worthLittleCopper(state)
+          and not MakeSpace.Safety.Blocker(item, rule.worthlessOverrides or WORTHLESS_OVERRIDES) then
+        local ceiling, source = Auction.CeilingFor(item)
+        -- Say what the hint was ("Outleveled reagent, worth very little"), so the
+        -- green is not left with only its price.
+        local title = type(heading) == "table" and heading.title or heading
+        return { verdict = "green",
+                 reason = greenNote("worth_little", type(title) == "string" and title or nil),
+                 auctionNote = note or (ceiling and Auction.PriceNote(item, ceiling, source)) or nil,
+                 worthLittle = true }
       end
-      reason = reason:gsub("%. May sell at the auction house$", "")
     end
-    return verdict, reason, detail, tag, nil, heading, note, nil, noteIsLive
-  end
-  if verdict == "green" then
-    local blocker = MakeSpace.Safety.Blocker(item, rule.overrides)
-    if blocker then return verdict, reason, detail, tag, blocker, heading end
-    if rule.checksAuction then
+  elseif verdict == "green" then
+    answer.blockedBy = MakeSpace.Safety.Blocker(item, rule.overrides)
+    if not answer.blockedBy and rule.checksAuction then
       local pricey, note = Auction.Blocker(item, state)
-      if pricey then return verdict, reason, detail, tag, pricey, heading, note end
+      if pricey then answer.blockedBy, answer.auctionNote = pricey, note end
     end
   end
-  return verdict, reason, detail, tag, nil, heading
+  return answer
 end
 
-local CONSUMABLE_CLASS_ID = 0
-
---- Evaluate a single item and return a verdict.
--- Player overrides win over every rule: a kept item is always silent,
--- a flagged item is always yellow.
--- Consumables (food, drink, potions, bandages) never get a green: they are
--- used up in play, so "you don't need this" is never safe to say. Some are also
--- vendor reagents (water, milk) and would otherwise read as green. They get
--- yellow hints only, when they are far outleveled or useless to the class.
--- The seventh value is a "Vendor 5c, auction about 8s" note, set when a green was
--- dropped because the auction pays clearly more: the player sees no green dot,
--- and the tooltip uses the note to say why there is none.
-function MakeSpace.Verdict.Evaluate(item, state)
+-- The decision for one item, by name: verdict, reason, detail, tag, rule (what
+-- decided it), heading, auctionNote, auctionNoteLive and worthLittle.
+-- Your own marks win over every rule: a kept item is silent, a flagged one yellow.
+-- Consumables never get a green (used up in play, so "you don't need this" is never
+-- safe) and some are vendor reagents (water, milk), so only the consumable rules
+-- speak for them (see ruleApplies).
+-- auctionNote is a "Vendor 5c, auction about 8s" line: it says why a green was
+-- dropped (the auction pays clearly more) or shows a hint's price.
+local function decide(item, state)
   -- Your own marks come before every rule. They are "marked", so the bank keeps
   -- them as they are and the tooltip can say whose call it is.
-  if item.isKept then return nil, nil, nil end
-  if item.isMarkedGreen then return "green", MARKED_REASON, nil, nil, "marked" end
+  if item.isKept then return {} end
+  if item.isMarkedGreen then
+    local _, reason = green("marked")
+    return { verdict = "green", reason = reason, rule = "marked" }
+  end
   if item.isFlagged then
     local verdict, reason, _, _, heading = yellow("flagged")
-    return verdict, reason, nil, nil, "marked", heading
+    return { verdict = verdict, reason = reason, rule = "marked", heading = heading }
   end
-  if item.classID == CONSUMABLE_CLASS_ID and not item.questProvided then
-    local verdict, reason, _, _, heading = evaluateItemHint(item, state)
-    if verdict then return verdict, reason, nil, nil, "item_hint", heading end
-    verdict, reason, _, _, heading = evaluateOpenable(item, state)
-    if verdict then return verdict, reason, nil, nil, "openable", heading end
-    local classRule = "mana_consumable"
-    verdict, reason, _, _, heading = evaluateManaConsumable(item, state)
-    if not verdict then
-      verdict, reason, _, _, heading = evaluateUselessStatScroll(item, state)
-      classRule = "useless_stat_scroll"
-    end
-    if verdict then
-      -- These sell well: show the price line when the auction pays more, trusting
-      -- a live Auctionator price only when it has held steady.
-      local note, _, noteIsLive = Auction.SteadyPriceLine(item, state)
-      return verdict, reason, nil, nil, classRule, heading, note, nil, noteIsLive
-    end
-    verdict, reason, _, _, heading = evaluateOutleveledConsumable(item, state)
-    if not verdict then return nil end
-    -- Consumables often sell well: say so when the auction house pays clearly
-    -- more than a vendor, so a hint never reads as "throw it away".
-    local note, _, noteIsLive = Auction.PriceLine(item, state)
-    return verdict, reason, nil, nil, "outleveled_consumable", heading, note, nil, noteIsLive
-  end
-
   -- A blocked green is dropped and the next rule gets its turn. A yellow is
   -- only a hint, so it waits: a later rule's green (already vetted by Safety)
   -- beats it. Otherwise the first yellow stands.
   local hint, auctionNote, auctionNoteLive
+  local consumable = isConsumable(item)
   for i = 1, #RULES do
-    local verdict, reason, detail, tag, blockedBy, heading, note, worthLittle, noteIsLive = runRule(RULES[i], item, state)
-    if verdict == "green" and not blockedBy then
-      return verdict, reason, detail, tag, RULES[i].name, heading, note, worthLittle, noteIsLive
-    end
-    if note and not auctionNote then auctionNote, auctionNoteLive = note, noteIsLive end
-    if verdict == "yellow" and not hint then
-      hint = { verdict, reason, detail, tag, RULES[i].name, heading }
+    local rule = RULES[i]
+    if ruleApplies(rule, consumable) then
+      local answer = runRule(rule, item, state)
+      if answer.verdict == "green" and not answer.blockedBy then
+        answer.rule = rule.name
+        return answer
+      end
+      if answer.auctionNote and not auctionNote then
+        auctionNote, auctionNoteLive = answer.auctionNote, answer.auctionNoteLive
+      end
+      if answer.verdict == "yellow" and not hint then
+        hint = { verdict = "yellow", reason = answer.reason, detail = answer.detail, tag = answer.tag,
+                 rule = rule.name, heading = answer.heading }
+        -- No rule that speaks for a consumable gives a green, so nothing later can
+        -- beat its first hint, and a later rule's price line must not join it.
+        if consumable then break end
+      end
     end
   end
-  if hint then return hint[1], hint[2], hint[3], hint[4], hint[5], hint[6], auctionNote, nil, auctionNoteLive end
-  return nil, nil, nil, nil, nil, nil, auctionNote, nil, auctionNoteLive
+  hint = hint or {}
+  hint.auctionNote, hint.auctionNoteLive = auctionNote, auctionNoteLive
+  return hint
 end
 
--- The reason of a green that says only "the stack is worth next to nothing". The
--- tooltip leaves it out when a price line under the heading already shows it.
-MakeSpace.Verdict.WORTH_LITTLE_REASON = "Worth very little"
+--- Evaluate a single item and return the decision as positional values.
+-- Callers other than the tests should use Judge: these are easy to misorder.
+-- @return verdict, reason, detail, tag, rule, heading, auctionNote, worthLittle, auctionNoteLive
+function MakeSpace.Verdict.Evaluate(item, state)
+  local r = decide(item, state)
+  return r.verdict, r.reason, r.detail, r.tag, r.rule, r.heading, r.auctionNote, r.worthLittle, r.auctionNoteLive
+end
+
+MakeSpace.Verdict.WORTH_LITTLE_REASON = MakeSpace.Notes.WORTH_LITTLE_REASON
 
 --- Evaluate an item and return the answer by name, which is what callers other
--- than the tests should use: Evaluate's positional values are easy to misorder.
+-- than the tests should use.
 -- @return table { verdict, reason, detail, tag, rule, heading, auctionNote, auctionNoteLive, sellable, worthLittle }
 --   verdict is "green", "yellow" or nil; rule names the rule that decided
 function MakeSpace.Verdict.Judge(item, state)
-  local verdict, reason, detail, tag, rule, heading, auctionNote, worthLittle, auctionNoteLive =
-      MakeSpace.Verdict.Evaluate(item, state)
-  return { verdict = verdict, reason = reason, detail = detail, tag = tag, rule = rule,
-           heading = heading, auctionNote = auctionNote,
-           -- The note is Auctionator's own number: its tooltip shows it right above.
-           auctionNoteLive = auctionNoteLive or nil,
-           -- A stack worth next to nothing is deleted, not vendored: the tooltip says "Safe to delete".
-           worthLittle = worthLittle or nil,
-           -- A green you set yourself says "Safe to delete", never "Safe to vendor".
-           sellable = rule ~= "marked" and MakeSpace.Verdict.Sellable(item, verdict) }
+  local result = decide(item, state)
+  -- A green you set yourself says "Safe to delete", never "Safe to vendor".
+  result.sellable = result.rule ~= "marked" and MakeSpace.Verdict.Sellable(item, result.verdict)
+  return result
 end
 
 --- Every rule that had something to say about an item, including greens that
@@ -1648,11 +1644,14 @@ end
 -- @return table list of { rule, verdict, reason, blockedBy }
 function MakeSpace.Verdict.Trace(item, state)
   local trace = {}
+  local consumable = isConsumable(item)
   for i = 1, #RULES do
-    local verdict, reason, _, _, blockedBy = runRule(RULES[i], item, state)
-    if verdict then
-      trace[#trace + 1] = { rule = RULES[i].name, verdict = verdict,
-                            reason = reason, blockedBy = blockedBy }
+    if ruleApplies(RULES[i], consumable) then
+      local answer = runRule(RULES[i], item, state)
+      if answer.verdict then
+        trace[#trace + 1] = { rule = RULES[i].name, verdict = answer.verdict,
+                              reason = answer.reason, blockedBy = answer.blockedBy }
+      end
     end
   end
   return trace

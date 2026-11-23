@@ -5,10 +5,8 @@
 MakeSpace = MakeSpace or {}
 MakeSpace.Bags = {}
 
---- The highest bag ID MakeSpace scans.
--- Backpack is 0 and the equipped bags are 1 to NUM_BAG_SLOTS. Clients that
--- have a reagent bag (Forever, like Mainline) put it right after them.
--- Classic Era has no reagent bag slot, so this stays 4 there.
+--- The highest bag ID MakeSpace scans: the backpack (0), the equipped bags, and the
+-- reagent bag that follows them where the client has one.
 function MakeSpace.Bags.LastScanned()
   local last = NUM_BAG_SLOTS or 4
   local reagentSlots = NUM_REAGENTBAG_SLOTS or 0
@@ -16,12 +14,10 @@ function MakeSpace.Bags.LastScanned()
   return last
 end
 
--- The bank. On Forever the character bank is a row of tabs, one bag ID each,
--- followed by the warband bank tabs (6-14 and 15-23 in the Forever client's
--- own API documentation). -1 is the keyring there, not a bank. The IDs come
--- from Enum.BagIndex when the client has it; otherwise any ID in a window
--- past the carried bags that reports slots counts. The bank is only readable
--- while it is open.
+-- The bank. On Forever the character bank is a row of tabs, one bag ID each, then
+-- the warband tabs. -1 is the keyring, not a bank. IDs come from Enum.BagIndex when
+-- the client has it; otherwise any ID in a window past the carried bags that reports
+-- slots counts. Readable only while the bank is open.
 local BANK_WINDOW = 20
 
 local function firstBankBag()

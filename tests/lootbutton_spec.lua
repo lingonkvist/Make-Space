@@ -45,16 +45,22 @@ local function fakeGame(bags)
 end
 
 describe("LootButton text", function()
-  it("says how many items it deletes", function()
-    assert.are.equal("Delete 1 item", MakeSpace.LootButton.Label(1))
-    assert.are.equal("Delete 3 items", MakeSpace.LootButton.Label(3))
+  it("names the item this click deletes, cut short if the name is long", function()
+    assert.are.equal("Delete Torn Rag", MakeSpace.LootButton.Label(1, "Torn Rag"))
+    assert.are.equal("Delete Greater Scarlet C...",
+      MakeSpace.LootButton.Label(1, "Greater Scarlet Crusader Gauntlets"))
+    -- no stray space in front of the dots
+    assert.are.equal("Delete Large Boar Tusks...", MakeSpace.LootButton.Label(1, "Large Boar Tusks Fragment"))
   end)
 
-  it("names the item when it is the only one, cut short if the name is long", function()
-    assert.are.equal("Delete Torn Rag", MakeSpace.LootButton.Label(1, "Torn Rag"))
-    assert.are.equal("Delete Greater Sca...",
-      MakeSpace.LootButton.Label(1, "Greater Scarlet Crusader Gauntlets"))
-    assert.are.equal("Delete 2 items", MakeSpace.LootButton.Label(2, "Torn Rag"))
+  it("says how many more follow it", function()
+    assert.are.equal("Delete Torn Rag +1", MakeSpace.LootButton.Label(2, "Torn Rag"))
+    assert.are.equal("Delete Torn Rag +4", MakeSpace.LootButton.Label(5, "Torn Rag"))
+  end)
+
+  it("says 'item' while the name is not known", function()
+    assert.are.equal("Delete item", MakeSpace.LootButton.Label(1))
+    assert.are.equal("Delete item +2", MakeSpace.LootButton.Label(3))
   end)
 
   it("lists each item with its price, and the stack size when it is more than one", function()
@@ -62,7 +68,7 @@ describe("LootButton text", function()
       { name = "Broken Fang", itemID = 1, count = 1, value = 2 },
       { name = "Gray Pelt", itemID = 2, count = 3, value = 120 },
     })
-    assert.are.equal("Bags full: makes room for loot", lines.title)
+    assert.are.equal("Bags full: each click deletes the top one", lines.title)
     assert.are.equal("Broken Fang", lines.rows[1].left)
     assert.are.equal("2c", lines.rows[1].right)
     assert.are.equal("Gray Pelt x3", lines.rows[2].left)
@@ -71,19 +77,30 @@ describe("LootButton text", function()
 
   it("falls back to the item id while the name is not known", function()
     local lines = MakeSpace.LootButton.TooltipLines({ { itemID = 77, count = 1, value = 0 } })
+    assert.are.equal("Bags full: makes room for loot", lines.title)
     assert.are.equal("item 77", lines.rows[1].left)
     assert.are.equal("", lines.rows[1].right)
   end)
 end)
 
 describe("LootButton.Run", function()
-  it("deletes every planned item and reports no problem", function()
+  it("deletes the first planned item only: one delete per click", function()
     local game = fakeGame({ [0] = { [1] = { id = 10, count = 1 }, [2] = { id = 20, count = 3 } } })
     local deleted, problem = MakeSpace.LootButton.Run(
       { planned(0, 1, 10), planned(0, 2, 20, 3) }, game.api)
-    assert.are.equal(2, deleted)
+    assert.are.equal(1, deleted)
     assert.is_nil(problem)
+    assert.are.equal(1, #game.deleted)
     assert.are.equal("0:1", game.deleted[1])
+  end)
+
+  it("the next click takes the next item", function()
+    local game = fakeGame({ [0] = { [1] = { id = 10, count = 1 }, [2] = { id = 20, count = 3 } } })
+    local plan = { planned(0, 1, 10), planned(0, 2, 20, 3) }
+    MakeSpace.LootButton.Run(plan, game.api)
+    table.remove(plan, 1)
+    local deleted = MakeSpace.LootButton.Run(plan, game.api)
+    assert.are.equal(1, deleted)
     assert.are.equal("0:2", game.deleted[2])
   end)
 
@@ -91,6 +108,13 @@ describe("LootButton.Run", function()
     local game = fakeGame({ [0] = { [1] = { id = 10, count = 1 } } })
     local deleted, problem = MakeSpace.LootButton.Run({ planned(0, 1, 10) }, game.api)
     assert.are.equal(1, deleted)
+    assert.is_nil(problem)
+  end)
+
+  it("does nothing for an empty plan", function()
+    local game = fakeGame({ [0] = {} })
+    local deleted, problem = MakeSpace.LootButton.Run({}, game.api)
+    assert.are.equal(0, deleted)
     assert.is_nil(problem)
   end)
 
@@ -102,13 +126,12 @@ describe("LootButton.Run", function()
     assert.are.equal(0, #game.deleted)
   end)
 
-  it("deletes nothing at all if any slot no longer holds what was planned", function()
-    local game = fakeGame({ [0] = { [1] = { id = 10, count = 1 }, [2] = { id = 99, count = 1 } } })
-    local deleted, problem = MakeSpace.LootButton.Run(
-      { planned(0, 1, 10), planned(0, 2, 20) }, game.api)
+  it("deletes nothing if the slot no longer holds what was planned", function()
+    local game = fakeGame({ [0] = { [1] = { id = 99, count = 1 } } })
+    local deleted, problem = MakeSpace.LootButton.Run({ planned(0, 1, 10) }, game.api)
     assert.are.equal(0, deleted)
     assert.is_truthy(problem:find("bags changed", 1, true))
-    assert.are.equal(0, #game.deleted) -- the first one was fine, and still stayed
+    assert.are.equal(0, #game.deleted)
   end)
 
   it("treats a changed stack size as a changed bag", function()
@@ -125,10 +148,9 @@ describe("LootButton.Run", function()
   end)
 
   it("puts the item back and says so when the game blocks the delete", function()
-    local game = fakeGame({ [0] = { [1] = { id = 10, count = 1 }, [2] = { id = 20, count = 1 } } })
+    local game = fakeGame({ [0] = { [1] = { id = 10, count = 1 } } })
     game.blocked = true
-    local deleted, problem = MakeSpace.LootButton.Run(
-      { planned(0, 1, 10), planned(0, 2, 20) }, game.api)
+    local deleted, problem = MakeSpace.LootButton.Run({ planned(0, 1, 10) }, game.api)
     assert.are.equal(0, deleted)
     assert.is_truthy(problem:find("did not allow", 1, true))
     assert.are.equal(1, game.cleared)
@@ -168,8 +190,8 @@ describe("LootButton.Update", function()
     summary = { active = true, deletes = 2 }
     stubGame(true)
     MakeSpace.LootButton.Update()
-    assert.are.equal(true, shown)
-    assert.are.equal("Delete 2 items", text)
+    assert.is_true(shown)
+    assert.are.equal("Delete item +1", text)
     assert.are.equal(_G.LootFrame, anchoredTo)
   end)
 
@@ -186,7 +208,7 @@ describe("LootButton.Update", function()
     MakeSpace.LootButton.Update()
     summary = { active = true, deletes = 0 }
     MakeSpace.LootButton.Update()
-    assert.are.equal(false, shown)
+    assert.is_false(shown)
   end)
 
   it("hides when the loot window is gone", function()
@@ -195,14 +217,14 @@ describe("LootButton.Update", function()
     MakeSpace.LootButton.Update()
     _G.LootFrame = { IsShown = function() return false end }
     MakeSpace.LootButton.Update()
-    assert.are.equal(false, shown)
+    assert.is_false(shown)
   end)
 
   it("never shows when the plan is not active", function()
     summary = { active = false, deletes = 3 }
     stubGame(true)
     MakeSpace.LootButton.Update()
-    assert.are.equal(false, shown)
+    assert.is_false(shown)
   end)
 
   it("removes the globals this spec set", function()
