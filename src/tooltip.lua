@@ -225,8 +225,18 @@ local function colorCoins(text)
   end))
 end
 
+-- Lines this addon has added to the tooltip being built. A tooltip stays at three
+-- lines or fewer (see DESIGN.md), and the optional rows check this before they join.
+local MAX_TOOLTIP_LINES = 3
+local linesAdded = 0
+
 local function addLine(tooltip, text, color)
   tooltip:AddLine(colorCoins(text), color.r, color.g, color.b)
+  linesAdded = linesAdded + 1
+end
+
+local function hasRoom(reserved)
+  return linesAdded + (reserved or 0) < MAX_TOOLTIP_LINES
 end
 
 -- The price line stays even with Auctionator installed: MakeSpace's number is
@@ -361,11 +371,12 @@ end
 -- quests far below your level, or finished ones.
 --   A quest in your log: "In log: Name", for any reagent (the row decides something).
 --   No quest in your log: "[level] Name (Zone)" in grey, only for a reagent few recipes
---   use: a common material (copper bars, linen) is wanted by some quest somewhere and
---   would carry the row for good.
+--   use (a common material is wanted by some quest somewhere and would carry the row
+--   for good), and only when some open quest is within reach (not 10+ levels from
+--   acceptable): a far quest is no reason to keep a cheap item.
 -- @return string|nil text
 -- @return boolean|nil inLog  true when the row is about a quest in your log
-local QUEST_ROW_MAX = 46
+local QUEST_ROW_MAX = MakeSpace.Notes.LINE_MAX
 local COMMON_REAGENT_RECIPES = 4 -- a reagent in this many recipes or more is a common material
 
 local function recipeCount(profEntries)
@@ -383,11 +394,8 @@ end
 
 -- A long quest name is cut so the row stays one short line.
 local function questRowText(prefix, text, more)
-  local room = QUEST_ROW_MAX - #prefix
-  if #text > room then text = text:sub(1, room - 3) .. "..." end
-  local row = prefix .. text
-  if more > 0 then row = row .. " +" .. more end
-  return row
+  local count = more > 0 and (" +" .. more) or ""
+  return prefix .. MakeSpace.Notes.Cut(text, QUEST_ROW_MAX - #prefix - #count) .. count
 end
 
 local function openQuestRow(questIDs, profEntries)
@@ -400,8 +408,11 @@ local function openQuestRow(questIDs, profEntries)
     local done = C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(id)
     local trivial = level and MakeSpace.Verdict.IsTrivialQuest(id, level)
     if not isRepeatable and not done and not trivial then
-      open[#open + 1] = id
-      if C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(id) then inLog[#inLog + 1] = id end
+      local taken = C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(id)
+      if taken then inLog[#inLog + 1] = id end
+      if taken or not (level and MakeSpace.Verdict.IsDistantQuest(id, level)) then
+        open[#open + 1] = id
+      end
     end
   end
 
@@ -422,7 +433,7 @@ local function addQuestRow(tooltip, row, inLog)
   addLine(tooltip, row, color)
 end
 
-local VERDICT_LINE_WRAP = 45
+local VERDICT_LINE_WRAP = MakeSpace.Notes.LINE_MAX
 
 -- The header names the verdict in words, so it never depends on color alone.
 -- In a bag green means you can delete it; in the loot window the item is not
@@ -517,6 +528,11 @@ end
 
 -- Only quests this player's faction can take: an Alliance quest on a Horde
 -- tooltip is noise, and the verdict already ignores it.
+-- Hints on consumables that a quest you have not taken does not hold back.
+local CONSUMABLE_HINT_RULES = {
+  outleveled_consumable = true, mana_consumable = true, useless_stat_scroll = true,
+}
+
 local function questsForTooltip(itemID)
   local questIDs = MakeSpace.Data.QuestItems and MakeSpace.Data.QuestItems[itemID]
   if not questIDs then return nil end
@@ -558,6 +574,7 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
   local itemID = tonumber(link:match("item:(%d+)"))
   if not itemID then return end
 
+  linesAdded = 0
   local result, greenHeading
   if isLootOwner(tooltip:GetOwner()) then
     -- Checked before the bag lookup: a loot row's ID could otherwise match a
@@ -598,15 +615,22 @@ function MakeSpace.Tooltip.OnTooltipSetItem(tooltip)
     if result and result.detail then
       addLine(tooltip, result.detail, INFO_COLOR)
     end
+    -- A reagent, or a consumable flagged as spare, still says which quest wants it,
+    -- so the hint and the reason to keep the item are side by side.
+    local spareConsumable = result and CONSUMABLE_HINT_RULES[result.rule]
+    local row, inLog
+    if (profEntries or spareConsumable) and questIDs and not isVendorReagent then
+      row, inLog = openQuestRow(questIDs, profEntries)
+    end
     -- Auctionator's tooltip already shows its own number right above: repeating it
     -- adds nothing. A price from the snapshot is Make Space's alone, so it stays.
-    if not (result and result.auctionNoteLive) then addPriceNote(tooltip, result) end
-    -- A reagent with a hint still says which quest wants it, so the hint and the
-    -- reason to keep the item are side by side.
-    if profEntries and questIDs and not isVendorReagent then
-      local row, inLog = openQuestRow(questIDs, profEntries)
-      if row then addQuestRow(tooltip, row, inLog) end
+    -- Within the line budget a quest in your log comes first, then the price, then
+    -- any other quest row.
+    if not (result and result.auctionNoteLive) and hasRoom(inLog and 1 or 0) then
+      addPriceNote(tooltip, result)
     end
+    -- A quest in your log always shows: it is why the item must not be deleted.
+    if row and (inLog or hasRoom()) then addQuestRow(tooltip, row, inLog) end
   else
     -- An item that would have been green but sells for more at auction: say so,
     -- so the missing dot is not a mystery. One row, leaving room for one more.

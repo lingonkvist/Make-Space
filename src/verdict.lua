@@ -92,7 +92,6 @@ local function evaluateLevelGap(item, state)
   if requiredLevel == 0 and itemLevel <= PLACEHOLDER_ITEM_LEVEL then return nil end
   local compareLevel = math.max(requiredLevel, itemLevel)
   if compareLevel <= 0 then return nil end
-  local isItemLevel = itemLevel > requiredLevel
 
   local gap = state.level - compareLevel
   if gap < LEVEL_GAP_YELLOW then return nil end
@@ -104,9 +103,9 @@ local function evaluateLevelGap(item, state)
 
   local very = gap >= LEVEL_GAP_GREEN
   if very and canBeGreen then
-    return green("outleveled_gear", isItemLevel, compareLevel, state.level)
+    return green("outleveled_gear", requiredLevel, itemLevel, state.level)
   end
-  return yellow("outleveled_gear", very, isItemLevel, compareLevel, state.level)
+  return yellow("outleveled_gear", very, requiredLevel, itemLevel, state.level)
 end
 
 -- QuestInfo field indices (data/quest_items.lua is generated).
@@ -393,6 +392,14 @@ end
 -- the item in your bags. A plain material is left alone when a recipe uses it.
 local QUEST_DISTANT_GAP = 10
 
+--- Is this quest too far off to accept for a long while? False when its accept
+--- level is unknown. Events are not judged here.
+function MakeSpace.Verdict.IsDistantQuest(questID, level)
+  local required = MakeSpace.Data.QuestRequiredLevels
+  local needed = required and required[questID]
+  return needed ~= nil and needed > (level or 1) + QUEST_DISTANT_GAP
+end
+
 local function evaluateDistantQuestItem(item, state)
   if item.onOpenQuest then return nil end
   -- Things in constant use (Soul Shards, class reagents, the hearthstone, a
@@ -426,9 +433,9 @@ local function evaluateDistantQuestItem(item, state)
     end
   end
   if nearestLevel then
-    return yellow("bank_quest", nearestLevel, questLabel(nearestQuest, nil))
+    return yellow("later_quest", nearestLevel, questLabel(nearestQuest, nil))
   end
-  return yellow("bank_event", eventName, questLabel(eventQuest, nil))
+  return yellow("later_event", eventName, questLabel(eventQuest, nil))
 end
 
 -- Items worth a word that no quest or recipe rule can say. Library books are
@@ -599,6 +606,11 @@ function MakeSpace.Verdict.SilenceAllButCheapest(entries, maxDots)
   return silenced
 end
 
+--- The reason line for a gray at a vendor, where every gray with a price is green.
+function MakeSpace.Verdict.VendorGrayReason(value)
+  return (greenNote("vendor_gray", MakeSpace.Verdict.FormatMoney(value)))
+end
+
 -- Only plain crafting materials can be called unused. The other Trade Goods
 -- subclasses (generic, parts, explosives, devices, other, enchanting rods and
 -- oils) hold things
@@ -701,10 +713,10 @@ local function evaluateRecipe(item, state)
   local idle = state.professionIdle and state.professionIdle[profession]
   local skillGap = idle and RECIPE_IDLE_SKILL_GAP or RECIPE_SKILL_GAP
   if rank and item.requiredSkill and item.requiredSkill > rank + skillGap then
-    return yellow("bank_skill", profession, item.requiredSkill)
+    return yellow("later_skill", profession, item.requiredSkill)
   end
   if item.reqLevel and item.reqLevel > (state.level or 1) + RECIPE_LEVEL_GAP then
-    return yellow("bank_level", item.reqLevel)
+    return yellow("later_level", item.reqLevel)
   end
   return nil
 end
@@ -835,12 +847,20 @@ function MakeSpace.Verdict.ReagentUseFacts(itemID, state)
 end
 
 local Auction = MakeSpace.Auction
--- Below this a slot is not worth a bank slot, or a hint to bank it: rebuying it
--- later costs next to nothing. It grows with the level, since so does money.
+-- Below this a stack is not worth keeping: buying it again later costs next to
+-- nothing. Half the bar where a gray stops being plainly junk, since a reagent
+-- can still be wanted and a gray cannot; never less than a flat floor or 5c a level.
 local WORTH_LITTLE_FLOOR_PER_SLOT = 50
 local WORTH_LITTLE_PER_LEVEL = 5
+local WORTH_LITTLE_GRAY_SHARE = 0.5
 local function worthLittleCopper(state)
-  return math.max(WORTH_LITTLE_FLOOR_PER_SLOT, (state.level or 1) * WORTH_LITTLE_PER_LEVEL)
+  return math.max(WORTH_LITTLE_FLOOR_PER_SLOT, (state.level or 1) * WORTH_LITTLE_PER_LEVEL,
+      math.floor(grayThreshold(state) * WORTH_LITTLE_GRAY_SHARE))
+end
+
+--- The line under which a stack counts as costing next to nothing (copper).
+function MakeSpace.Verdict.WorthLittleLine(state)
+  return worthLittleCopper(state)
 end
 
 -- A reagent the player's own professions will not use for a good while. Every
@@ -872,11 +892,9 @@ local function evaluateDistantReagent(item, state)
     end
   end
   if not nearest then return nil end
-  -- Banking a stack that costs next to nothing to buy again is only clutter.
-  -- Needs a known price: an item nobody lists may be rare, and says nothing.
-  local value = Auction.SlotValueIfKnown(item, state)
-  if value and value <= worthLittleCopper(state) then return nil end
-  return yellow("bank_used_from", nearest.name, nearest.minSkill)
+  -- A stack that costs next to nothing to buy again turns green in runRule
+  -- (cheapIsGreen), which needs a known price: an item nobody lists may be rare.
+  return yellow("later_used_from", nearest.name, nearest.minSkill)
 end
 
 -- A reagent every one of your professions that uses it has left behind: the
@@ -1468,6 +1486,9 @@ local WORTHLESS_RECIPE_OVERRIDES = { recipe_reagent = true, essential_item = tru
 --   steadyPricesOnly    the price line trusts a live price only once it has held steady
 --   checksAuction       a green is held back when the auction pays clearly more
 --   showsAuctionPrice   a yellow gets the price line, and may become "worth very little"
+--   cheapIsGreen        a yellow on a listed stack that costs next to nothing to buy
+--                       again loses its hint, and becomes green ("Cheap to rebuy") when
+--                       it also sells to a vendor, can be traded and is not protected
 --   worthlessIsGreen    a yellow whose stack is worth next to nothing becomes green
 --   worthlessOnlyForAuctionHints  ...but only a hint that says "this may sell"
 --   worthlessOverrides  protections that green may lift (default WORTHLESS_OVERRIDES)
@@ -1520,7 +1541,7 @@ local RULES = {
   { name = "recipe",             evaluate = evaluateRecipe, showsAuctionPrice = true,
     worthlessIsGreen = true, worthlessOnlyForAuctionHints = true,
     worthlessOverrides = WORTHLESS_RECIPE_OVERRIDES },
-  { name = "distant_reagent",    evaluate = evaluateDistantReagent },
+  { name = "distant_reagent",    evaluate = evaluateDistantReagent, cheapIsGreen = true },
   { name = "outleveled_reagent", evaluate = evaluateOutleveledReagent, showsAuctionPrice = true,
     worthlessIsGreen = true },
   { name = "other_profession_reagent", evaluate = evaluateOtherProfessionReagent, showsAuctionPrice = true,
@@ -1530,6 +1551,26 @@ local RULES = {
   { name = "sell_at_vendor",     evaluate = evaluateSellAtVendor },
 }
 
+-- Is this stack worth next to nothing, on a price we know? An item nobody lists may
+-- be rare, so no price means no.
+local function costsNextToNothing(item, state)
+  local value = Auction.SlotValueIfKnown(item, state)
+  return value ~= nil and value <= worthLittleCopper(state)
+end
+
+-- Cheap enough to call safe: also on a vendor price and buyable again. An untradeable
+-- item cannot be bought, and no vendor price usually means a special item.
+local function cheapToRebuy(item, state)
+  return (item.sellPrice or 0) > 0 and Auction.IsTradeable(item) and costsNextToNothing(item, state)
+end
+
+-- An item no vendor buys and the auction pays next to nothing for: not worth listing, so
+-- the auction check has nothing to hold a green back for. With a vendor price the
+-- auction check stays, since selling beats deleting.
+local function auctionPaysNothingWorthListing(item, state)
+  return (item.sellPrice or 0) == 0 and costsNextToNothing(item, state)
+end
+
 --- Run one rule and apply the safety check to a green.
 -- @return table  { verdict, reason, detail, tag, heading, blockedBy, auctionNote,
 --   auctionNoteLive, worthLittle }. worthLittle: a green that only says the stack
@@ -1537,6 +1578,21 @@ local RULES = {
 local function runRule(rule, item, state)
   local verdict, reason, detail, tag, heading = rule.evaluate(item, state)
   local answer = { verdict = verdict, reason = reason, detail = detail, tag = tag, heading = heading }
+  -- A quest in your log wants this item now: "needed later" would contradict the quest row.
+  if verdict == "yellow" and item.onOpenQuest and type(heading) == "table"
+      and heading.title == MakeSpace.Notes.NEEDED_LATER_TITLE then
+    return {}
+  end
+  if verdict == "yellow" and rule.cheapIsGreen and costsNextToNothing(item, state) then
+    -- No reason to keep a stack that costs next to nothing to buy again, so no hint.
+    -- Green only when it is also safe to say so; otherwise the item stays silent.
+    if cheapToRebuy(item, state)
+        and not MakeSpace.Safety.Blocker(item, rule.worthlessOverrides or WORTHLESS_OVERRIDES) then
+      local what = type(heading) == "table" and heading.detail or nil
+      return { verdict = "green", reason = greenNote("cheap_to_rebuy", what or reason), worthLittle = true }
+    end
+    return {}
+  end
   if verdict == "yellow" and rule.showsAuctionPrice then
     local priceLine = rule.steadyPricesOnly and Auction.SteadyPriceLine or Auction.PriceLine
     local note, notWorth, noteIsLive = priceLine(item, state)
@@ -1562,7 +1618,9 @@ local function runRule(rule, item, state)
     answer.blockedBy = MakeSpace.Safety.Blocker(item, rule.overrides)
     if not answer.blockedBy and rule.checksAuction then
       local pricey, note = Auction.Blocker(item, state)
-      if pricey then answer.blockedBy, answer.auctionNote = pricey, note end
+      if pricey and not auctionPaysNothingWorthListing(item, state) then
+        answer.blockedBy, answer.auctionNote = pricey, note
+      end
     end
   end
   return answer

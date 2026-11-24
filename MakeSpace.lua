@@ -220,6 +220,13 @@ local function onPlayerLogin(self)
   if notice then print("|cff54de7d[Make Space]|r " .. notice) end
 end
 
+-- A vendor window changes which grays are green, so rescan before repainting.
+local function vendorChanged(open)
+  MakeSpace.Scanner.SetVendorOpen(open)
+  MakeSpace.Scanner.ScanAll()
+  MakeSpace.Overlay.SetVendorOpen(open)
+end
+
 local EVENT_HANDLERS = {
   ADDON_LOADED           = onAddonLoaded,
   PLAYER_LOGIN           = onPlayerLogin,
@@ -247,8 +254,8 @@ local EVENT_HANDLERS = {
   AUCTION_HOUSE_SHOW     = hookAuctionatorPrices,
   AUCTION_HOUSE_CLOSED   = auctionPricesChanged,
   BANKFRAME_CLOSED       = rescanSoon,
-  MERCHANT_SHOW          = function() MakeSpace.Overlay.SetVendorOpen(true) end,
-  MERCHANT_CLOSED        = function() MakeSpace.Overlay.SetVendorOpen(false) end,
+  MERCHANT_SHOW          = function() vendorChanged(true) end,
+  MERCHANT_CLOSED        = function() vendorChanged(false) end,
   PLAYERBANKSLOTS_CHANGED = rescanSoon,
   PLAYERBANKBAGSLOTS_CHANGED = rescanSoon,
   PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED = rescanSoon,

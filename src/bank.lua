@@ -25,6 +25,14 @@ local BANK_DROPS_GREEN = {
   sell_at_vendor = true, -- a vendor suggestion is not needed in the bank (the auction hint is)
   recipe = true,
   outleveled_reagent = true,
+  distant_reagent = true,
+}
+
+-- A green whose reason is a full line (a quest and "(completed)") has no title of its
+-- own, so the bank names the yellow it becomes from the rule.
+local BANK_TITLES = {
+  quest_objective_done = "Quest completed",
+  quest_starter_done = "Quest completed",
 }
 
 --- Turn a verdict result into what the bank should show. The warband bank is for
@@ -36,7 +44,7 @@ local BANK_DROPS_GREEN = {
 --   nil/empty result when there is nothing to show
 function MakeSpace.Verdict.ForBank(result, isWarband)
   if not result or not result.verdict then return result end
-  if result.heading and result.heading.title == MakeSpace.Notes.BANK_IT_TITLE then return {} end
+  if result.heading and result.heading.title == MakeSpace.Notes.NEEDED_LATER_TITLE then return {} end
   if BANK_DROPS[result.rule] then return {} end
   if result.verdict == "green" and BANK_DROPS_GREEN[result.rule] then return {} end
   -- Nobody needs a vendor suggestion for something already banked.
@@ -49,7 +57,10 @@ function MakeSpace.Verdict.ForBank(result, isWarband)
   -- words the bag shows under "Safe to delete": "Quest completed", and so on.
   return { verdict = "yellow", reason = result.reason, detail = result.detail,
            tag = result.tag, rule = result.rule,
-           heading = result.heading or { title = result.reason },
+           heading = result.heading
+               or (BANK_TITLES[result.rule] and { title = BANK_TITLES[result.rule],
+                   detail = result.reason ~= BANK_TITLES[result.rule] and result.reason or nil })
+               or { title = result.reason },
            auctionNote = result.auctionNote, auctionNoteLive = result.auctionNoteLive }
 end
 

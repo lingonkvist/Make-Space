@@ -1,10 +1,10 @@
 -- The entry point's loot handling: a loot window with no items (gold) must not
 -- cost a full bag scan, and one with items must still get one.
 
-local handlers, scans, lootUpdates, hasLoot, planActive, opened, bagsShown
+local handlers, scans, lootUpdates, hasLoot, planActive, opened, bagsShown, vendorSteps
 
 local function loadEntry()
-  scans, lootUpdates, hasLoot = 0, 0, false
+  scans, lootUpdates, hasLoot, vendorSteps = 0, 0, false, {}
   planActive, opened, bagsShown = false, 0, false
   handlers = nil
   _G.CreateFrame = function()
@@ -22,7 +22,8 @@ local function loadEntry()
   _G.MakeSpace = {
     Bags = {},
     Scanner = {
-      ScanAll = function() scans = scans + 1 end,
+      ScanAll = function() scans = scans + 1; vendorSteps[#vendorSteps + 1] = "scan" end,
+      SetVendorOpen = function(open) vendorSteps[#vendorSteps + 1] = "scanner:" .. tostring(open) end,
       ClearCache = function() end,
       HasLoot = function() return hasLoot end,
       RefreshLoot = function() end,
@@ -32,7 +33,7 @@ local function loadEntry()
     Overlay = {
       UpdateAll = function() end,
       UpdateLoot = function() lootUpdates = lootUpdates + 1 end,
-      SetVendorOpen = function() end,
+      SetVendorOpen = function(open) vendorSteps[#vendorSteps + 1] = "overlay:" .. tostring(open) end,
     },
   }
   dofile("MakeSpace.lua")
@@ -134,6 +135,15 @@ describe("Entry point: loot events", function()
     fire("LOOT_SLOT_CLEARED", 1)
     assert.are.equal(before + 1, lootUpdates)
     _G.C_Timer = nil
+  end)
+
+  it("a vendor window sets the flag, rescans, then repaints, and undoes it on close", function()
+    loadEntry()
+    fire("MERCHANT_SHOW")
+    assert.are.equal("scanner:true,scan,overlay:true", table.concat(vendorSteps, ","))
+    vendorSteps = {}
+    fire("MERCHANT_CLOSED")
+    assert.are.equal("scanner:false,scan,overlay:false", table.concat(vendorSteps, ","))
   end)
 
   it("scans when the window closes with items left, and not otherwise", function()

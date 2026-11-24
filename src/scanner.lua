@@ -823,6 +823,15 @@ local function grayEntry(key, bag, slot, item, result)
            value = (item.sellPrice or 0) * (item.count or 1), verdict = result.verdict }
 end
 
+-- At a vendor every gray that sells is green: selling them all is the point of
+-- the visit, and one that is worth silver loses nothing by being sold.
+local atVendor = false
+
+--- Tell the scanner a vendor window opened or closed (the caller rescans).
+function MakeSpace.Scanner.SetVendorOpen(open)
+  atVendor = open and true or false
+end
+
 -- Only the cheapest gray(s) keep their dot. The cached result is shared between
 -- slots, so silence them with a fresh table instead of editing it.
 local function thinGrays(grays)
@@ -844,6 +853,28 @@ local function thinGrays(grays)
       }
     end
   end
+end
+
+-- Grays in the bags: at a vendor all that sell are green, and only those with no
+-- vendor price are thinned like usual. Anywhere else only the cheapest is.
+local function showBagGrays(grays)
+  if not atVendor then return thinGrays(grays) end
+  local unsellable = {}
+  for _, entry in ipairs(grays) do
+    if entry.value > 0 then
+      local original = slotResults[entry.key]
+      slotResults[entry.key] = {
+        verdict = "green",
+        reason = MakeSpace.Verdict.VendorGrayReason(entry.value),
+        tag = MakeSpace.Verdict.POOR_QUALITY_TAG,
+        rule = original.rule,
+        sellable = true,
+      }
+    else
+      unsellable[#unsellable + 1] = entry
+    end
+  end
+  thinGrays(unsellable)
 end
 
 -- Count the dots in your bags and what the green ones would sell for.
@@ -972,7 +1003,7 @@ local function scanAllSlots()
   end
 
   -- The bank is thinned the same way, apart from the bags.
-  thinGrays(poorQuality)
+  showBagGrays(poorQuality)
   thinGrays(poorQualityBank)
   summarizeBags(junkCandidates)
   planMakeRoom(junkCandidates, stackRoom, freeSlots)

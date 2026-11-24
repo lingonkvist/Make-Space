@@ -1,21 +1,43 @@
 -- MakeSpace: the words behind every yellow verdict, defined once in three parts:
---   reason  one sentence for the report and /makespace why. May carry numbers.
---           Never a hint about what else to do (the price line says that).
---   title   two to four words, no numbers. Constant per situation, so the tooltip
---           heading is predictable.
---   detail  the one fact or action behind the title ("Needs level 30"), or nil when
---           the item's own tooltip already says it. Lines are joined with "\n".
+--   title   two to four words, no numbers: the opinion, as a fact about the item
+--           ("Needed later", "Not your profession"), not an instruction. An action
+--           is allowed only where the item has one obvious thing to do (Open it,
+--           Library book, Trade for a buff, Consider auctioning). Constant per
+--           situation, so the tooltip heading is predictable.
+--   detail  the one fact behind the title ("Requires level 30"), or nil when the
+--           item's own tooltip already says it. Lines are joined with "\n".
+--   reason  one factual sentence for the report and /makespace why. May carry
+--           numbers. Never a hint about what else to do (the price line says that).
+-- A tooltip is title, detail, then at most one price or source line: three lines or
+-- fewer (DESIGN.md). Every line is written to fit LINE_MAX characters; names are cut
+-- with Cut, lists name two and count the rest. The same idea always gets the same words:
+--   Requires X       a requirement (level, skill), as the item's own tooltip says it
+--   Used by X        who uses it; Used from X: the skill where a use starts
+--   Best for you: X  the better one to use instead
+--   Hand in to X     where to take it
+--   Vendor Xs, auction up to Ys   the money line
+-- Do not repeat a word the title already says ("Needed later" is not followed by "Needs").
 -- A rule returns the heading with its verdict, so the tooltip never guesses it.
 MakeSpace = MakeSpace or {}
 MakeSpace.Notes = {
   -- The reason of a green that only says the stack is worth next to nothing. The
   -- tooltip leaves it out when a price line under the heading already shows it.
   WORTH_LITTLE_REASON = "Worth very little",
-  -- Title of the hints that tell you to bank an item. Pointless once the item
-  -- is in the bank, so the bank view drops anything with this title.
-  BANK_IT_TITLE = "Bank it",
+  -- Title of the hints for an item you cannot use yet but will. Pointless once the
+  -- item is in the bank, so the bank view drops anything with this title.
+  NEEDED_LATER_TITLE = "Needed later",
+  -- The width every tooltip line is written to fit, in characters. Wider lines stretch
+  -- the whole tooltip past the item's own text.
+  LINE_MAX = 45,
 }
-local BANK_IT = MakeSpace.Notes.BANK_IT_TITLE
+local NEEDED_LATER = MakeSpace.Notes.NEEDED_LATER_TITLE
+
+--- Cut a name so a line fits: "Rise of the Silithid Hive..." (trailing space trimmed).
+function MakeSpace.Notes.Cut(text, max)
+  if #text <= max then return text end
+  return (text:sub(1, max - 3):gsub("%s+$", "")) .. "..."
+end
+local Cut = MakeSpace.Notes.Cut
 local MARKED = "Marked by you"
 
 -- Hints whose whole point is "you cannot use this, so it may sell". When the
@@ -28,42 +50,52 @@ local function capitalize(text)
 end
 
 -- The facts of an outleveled piece of gear, for the yellow's detail and the green's reason.
-local function gearFacts(isItemLevel, n, you)
-  return (isItemLevel and "Item level " or "Required level ") .. n .. ", you are " .. you
+-- The required level is named when there is a real one (level 1 is every item's floor,
+-- so it says nothing). The item level joins it when it is the higher one (it decided),
+-- and stands alone otherwise.
+-- "You are N" only goes with a required level: an item level is not a character level.
+local function gearFacts(required, itemLevel, you)
+  if itemLevel > required then
+    return required > 1 and ("Requires level " .. required .. ", item level " .. itemLevel)
+        or ("Item level " .. itemLevel)
+  end
+  return "Requires level " .. required .. ", you are " .. you
 end
 
 local function lowerFirst(text)
   return (text:gsub("^%u", string.lower))
 end
 
--- A hint to bank an item: the reason is the detail in a sentence.
-local function bankIt(detail)
-  return "Bank it, " .. lowerFirst(detail), BANK_IT, detail
+-- A hint that an item will be needed later: the reason says when, the detail what.
+local function neededLater(when, detail)
+  return "Needed later, " .. when, NEEDED_LATER, detail
 end
 
 local NOTES = {
-  outleveled_gear = function(very, isItemLevel, n, you)
-    -- The tooltip keeps one title for all four wordings: the detail says which.
+  outleveled_gear = function(very, required, itemLevel, you)
+    -- The tooltip keeps one title for all wordings: the detail says which.
     local lead = very and "Very low " or "Low "
-    if isItemLevel then
-      return lead .. "item level (" .. n .. " for level " .. you .. ")", "Outleveled gear",
-          gearFacts(true, n, you)
+    local facts = gearFacts(required, itemLevel, you)
+    if itemLevel > required then
+      local reason = required > 1
+          and (lead .. "level gear (requires " .. required .. ", item level " .. itemLevel .. ", you are " .. you .. ")")
+          or (lead .. "item level (" .. itemLevel .. " for level " .. you .. ")")
+      return reason, "Outleveled gear", facts
     end
-    return lead .. "level gear (needs " .. n .. ", you are " .. you .. ")", "Outleveled gear",
-        gearFacts(false, n, you)
+    return lead .. "level gear (requires " .. required .. ", you are " .. you .. ")", "Outleveled gear", facts
   end,
   quest_abandon = function()
-    return "Quest is far below you, consider abandoning it", "Outleveled quest", "Consider abandoning it"
+    return "Quest in your log is far below you", "Outleveled quest", "Consider abandoning it"
   end,
   quest_not_worth = function()
-    return "Quest is far below you, probably not worth taking", "Outleveled quest", "Probably not worth it"
+    return "Quest is far below you", "Outleveled quest", "Probably not worth it"
   end,
   gray_worth = function(value)
     -- Only the cheapest gray keeps a dot, so it is always "the cheapest". The
     -- detail line is the reason itself, worded like the green gray's; the title
     -- says why it is not green.
     local reason = "Cheapest gray, sells for " .. value
-    return reason, "Save for vendor", reason
+    return reason, "Gray worth selling", reason
   end,
   no_known_use = function(value)
     return "Not used for any quest or recipe, sells for " .. value, "No known use", nil
@@ -71,21 +103,23 @@ local NOTES = {
   not_your_profession = function()
     return "You don't have this profession", "Not your profession", nil
   end,
-  bank_skill = function(profession, skill)
-    return bankIt("Needs " .. profession .. " " .. skill)
+  later_skill = function(profession, skill)
+    return neededLater("at " .. profession .. " " .. skill, "Requires " .. profession .. " " .. skill)
   end,
-  bank_level = function(level)
-    return bankIt("Needs level " .. level)
+  later_level = function(level)
+    return neededLater("at level " .. level, "Requires level " .. level)
   end,
-  bank_used_from = function(profession, skill)
-    return bankIt("Used from " .. profession .. " " .. skill)
+  later_used_from = function(profession, skill)
+    return neededLater("from " .. profession .. " " .. skill, "Used from " .. profession .. " " .. skill)
   end,
-  bank_quest = function(level, label)
-    return "Bank it, quest needs level " .. level, BANK_IT, label or ("Needs level " .. level)
+  later_quest = function(level, label)
+    return neededLater("quest requires level " .. level,
+        label and Cut(label, MakeSpace.Notes.LINE_MAX) or ("Requires level " .. level))
   end,
-  bank_event = function(event, label)
-    return "Bank it, for a " .. event .. " quest", BANK_IT,
-        label and (capitalize(event) .. ": " .. label) or capitalize(event)
+  later_event = function(event, label)
+    local lead = capitalize(event)
+    return neededLater("for a " .. event .. " quest",
+        label and (lead .. ": " .. Cut(label, MakeSpace.Notes.LINE_MAX - #lead - 2)) or lead)
   end,
   outleveled_reagent = function(profession, skill, green)
     -- With the green point known, say where the last recipe turns green.
@@ -114,12 +148,14 @@ local NOTES = {
     -- The detail is only the better one to use, when there is one: the item's own
     -- tooltip says its level and you know yours.
     return "Outleveled " .. noun .. " (level " .. level .. ", you are " .. you .. ")",
-        "Outleveled " .. noun, better and ("Best for you: " .. better) or nil
+        "Outleveled " .. noun, better and Cut("Best for you: " .. better, MakeSpace.Notes.LINE_MAX) or nil
   end,
   weak_bandage = function(percent, better)
     local heals = "Heals " .. percent .. "% of your health"
-    return "Weak bandage, " .. heals:lower(), "Weak bandage",
-        better and (heals .. "\nBest for you: " .. better) or heals
+    -- With a better bandage the detail is one line: what it heals, then what to use.
+    local detail = better and Cut("Heals " .. percent .. "%, best for you: " .. better,
+        MakeSpace.Notes.LINE_MAX) or heals
+    return "Weak bandage, " .. heals:lower(), "Weak bandage", detail
   end,
   wrong_class_reagent = function(whole)
     return whole, "Wrong class reagent", whole
@@ -128,12 +164,9 @@ local NOTES = {
     return "Only used by " .. other .. " quests", other .. "-only quest item", nil
   end,
   other_profession_reagent = function(professions)
-    local list
-    if #professions > 3 then
-      list = #professions .. " professions"
-    else
-      list = table.concat(professions, ", ")
-    end
+    -- Two names and a count of the rest, so the line stays short however many use it.
+    local list = table.concat(professions, ", ", 1, math.min(#professions, 2))
+    if #professions > 2 then list = list .. " +" .. (#professions - 2) end
     return "Only used by professions you don't have", "Not your profession", "Used by " .. list
   end,
   library_book = function(faction)
@@ -168,7 +201,10 @@ end
 -- there is one, a detail.
 local GREEN_NOTES = {
   quest_completed = function(label)
-    return "Quest completed", label
+    -- One line: the quest, then that it is done. Without a name, just that it is done.
+    if not label then return "Quest completed" end
+    local suffix = " (completed)"
+    return Cut(label, MakeSpace.Notes.LINE_MAX - #suffix) .. suffix
   end,
   quests_completed = function(count)
     return "All " .. count .. " quests completed"
@@ -176,8 +212,11 @@ local GREEN_NOTES = {
   vendor_reagent = function(professions)
     -- professions is the list that uses it, or nil when only the skill lines are known.
     if not professions then return "Vendor reagent" end
-    if #professions >= 3 then return "Vendor reagent (" .. #professions .. " professions)" end
-    return "Vendor reagent (" .. table.concat(professions, ", ") .. ")"
+    local named = "Vendor reagent (" .. table.concat(professions, ", ") .. ")"
+    if #professions >= 3 or #named > MakeSpace.Notes.LINE_MAX then
+      return "Vendor reagent (" .. #professions .. " professions)"
+    end
+    return named
   end,
   no_known_use = function()
     return "Not used for any quest or recipe"
@@ -192,8 +231,16 @@ local GREEN_NOTES = {
   vendor_beats_auction = function(vendorText, auctionText, isLive)
     return "Vendor " .. vendorText .. ", auction " .. (isLive and "about " or "up to ") .. auctionText
   end,
+  vendor_gray = function(valueText)
+    return "Gray, sells for " .. valueText
+  end,
   cheapest_gray = function(valueText)
     return "Cheapest gray, " .. (valueText and ("sells for " .. valueText) or "no vendor value")
+  end,
+  cheap_to_rebuy = function(detail)
+    -- detail is what the item is for ("Used from Cooking 145"): the green says why it
+    -- is still safe to delete, which is that buying it again costs next to nothing.
+    return "Cheap to rebuy, " .. lowerFirst(detail)
   end,
   worth_little = function(title)
     -- title is what the hint was ("Outleveled reagent"), so the green says why.
@@ -203,8 +250,8 @@ local GREEN_NOTES = {
   marked = function()
     return MARKED
   end,
-  outleveled_gear = function(isItemLevel, n, you)
-    return gearFacts(isItemLevel, n, you)
+  outleveled_gear = function(required, itemLevel, you)
+    return gearFacts(required, itemLevel, you)
   end,
 }
 

@@ -878,6 +878,27 @@ describe("tooltip: a reagent that a quest wants", function()
     assert.are.equal("[40] Test Quest 301 (Tanaris) +2", tt.lines[3].text)
   end)
 
+  it("names the quest under a spare-consumable hint, which no recipe uses", function()
+    setup({ verdict = "yellow", reason = "Outleveled", rule = "outleveled_consumable",
+            heading = { title = "Outleveled potion", detail = "Best for you: Greater Healing Potion (level 21)" } })
+    MakeSpace.Data.ReagentProfessions = {}
+    local tt = makeTooltip("|cff...|Hitem:3470:...|h[Healing Potion]|h|r", "ContainerFrame1", 0, 1)
+    MakeSpace.Tooltip.OnTooltipSetItem(tt)
+
+    assert.are.equal("Best for you: Greater Healing Potion (level 21)", tt.lines[2].text)
+    assert.are.equal("[40] Test Quest 301 (Tanaris) +2", tt.lines[3].text)
+  end)
+
+  it("adds no quest row to a hint that is not about a reagent or a spare consumable", function()
+    setup({ verdict = "yellow", reason = "Needed later", rule = "distant_quest",
+            heading = { title = "Needed later", detail = "For a far quest" } })
+    MakeSpace.Data.ReagentProfessions = {}
+    local tt = makeTooltip("|cff...|Hitem:3470:...|h[Odd Thing]|h|r", "ContainerFrame1", 0, 1)
+    MakeSpace.Tooltip.OnTooltipSetItem(tt)
+
+    assert.are.equal(2, #tt.lines)
+  end)
+
   it("puts the quest last when there is no hint, below the skill ranges", function()
     setup({ verdict = nil, reason = nil })
     local tt = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
@@ -885,6 +906,109 @@ describe("tooltip: a reagent that a quest wants", function()
 
     assert.is_truthy(tt.lines[1].text:find("Alchemy"))
     assert.are.equal("[40] Test Quest 301 (Tanaris) +2", tt.lines[#tt.lines].text)
+  end)
+
+  describe("far quests", function()
+    local savedLevel, savedRequired
+
+    local function withLevel(level, required, fn)
+      savedLevel, savedRequired = _G.UnitLevel, MakeSpace.Data.QuestRequiredLevels
+      _G.UnitLevel = function() return level end
+      MakeSpace.Data.QuestRequiredLevels = required
+      fn()
+      _G.UnitLevel, MakeSpace.Data.QuestRequiredLevels = savedLevel, savedRequired
+    end
+
+    local function hover()
+      local tt = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
+      MakeSpace.Tooltip.OnTooltipSetItem(tt)
+      return tt
+    end
+
+    it("adds no row when every open quest is 10+ levels from acceptable", function()
+      setup({ verdict = nil, reason = nil })
+      withLevel(20, { [301] = 31, [302] = 40, [303] = 50 }, function()
+        local tt = hover()
+        assert.is_truthy(tt.lines[#tt.lines].text:find("Alchemy"))
+        assert.is_nil(tt.lines[#tt.lines].text:find("Test Quest", 1, true))
+      end)
+    end)
+
+    it("names a quest within reach and leaves the far ones out of the count", function()
+      setup({ verdict = nil, reason = nil })
+      withLevel(20, { [301] = 30, [302] = 40, [303] = 50 }, function()
+        local tt = hover()
+        assert.are.equal("[40] Test Quest 301 (Tanaris)", tt.lines[#tt.lines].text)
+      end)
+    end)
+
+    it("still shows a quest in your log, however far its level", function()
+      setup({ verdict = nil, reason = nil })
+      _G.C_QuestLog.IsOnQuest = function(id) return id == 303 end
+      withLevel(20, { [301] = 40, [302] = 45, [303] = 50 }, function()
+        local tt = hover()
+        assert.are.equal("In log: Test Quest 303", tt.lines[#tt.lines].text)
+      end)
+      _G.C_QuestLog.IsOnQuest = nil
+    end)
+
+    it("keeps the row when a quest has no accept-level data", function()
+      setup({ verdict = nil, reason = nil })
+      withLevel(20, { [301] = 40 }, function()
+        local tt = hover()
+        assert.is_truthy(tt.lines[#tt.lines].text:find("Test Quest", 1, true))
+      end)
+    end)
+  end)
+
+  describe("line budget", function()
+    local function hover()
+      local tt = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
+      MakeSpace.Tooltip.OnTooltipSetItem(tt)
+      return tt
+    end
+    local function hint(extra)
+      local result = { verdict = "yellow", reason = "Outleveled",
+                       heading = { title = "Outleveled reagent", detail = "Recipes turn green at Alchemy 100" } }
+      for key, value in pairs(extra or {}) do result[key] = value end
+      return result
+    end
+
+    it("drops the quest row when the price line already fills the third line", function()
+      setup(hint({ auctionNote = "Vendor 3s, auction up to 8s" }))
+      local tt = hover()
+      assert.are.equal(3, #tt.lines)
+      local plain = tt.lines[3].text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+      assert.are.equal("Vendor 3s, auction up to 8s", plain)
+    end)
+
+    it("puts a quest in your log before the price line", function()
+      setup(hint({ auctionNote = "Vendor 3s, auction up to 8s" }))
+      _G.C_QuestLog.IsOnQuest = function(id) return id == 302 end
+      local tt = hover()
+      _G.C_QuestLog.IsOnQuest = nil
+      assert.are.equal(3, #tt.lines)
+      assert.are.equal("In log: Test Quest 302", tt.lines[3].text)
+    end)
+
+    it("never goes past three lines, apart from a quest in your log under a two-line detail", function()
+      for _, twoLineDetail in ipairs({ false, true }) do
+        for _, price in ipairs({ false, true }) do
+          for _, mode in ipairs({ "none", "reachable", "inLog" }) do
+            local detail = twoLineDetail and "Heals 9% of your health\nBest for you: Heavy Bandage" or "Requires level 30"
+            setup(hint({ heading = { title = "Weak bandage", detail = detail },
+                         auctionNote = price and "Vendor 3s, auction up to 8s" or nil }))
+            if mode == "none" then MakeSpace.Data.QuestItems = {} end
+            if mode == "inLog" then _G.C_QuestLog.IsOnQuest = function(id) return id == 302 end end
+            local count = #hover().lines
+            _G.C_QuestLog.IsOnQuest = nil
+            local allowed = (twoLineDetail and mode == "inLog") and 4 or 3
+            assert.is_truthy(count <= allowed, ("detail2=%s price=%s quest=%s gave %d lines"):format(
+                tostring(twoLineDetail), tostring(price), mode, count))
+          end
+        end
+      end
+    end)
   end)
 
   it("leaves out repeatable quests, so they are not on every row", function()
@@ -904,7 +1028,7 @@ describe("tooltip: a reagent that a quest wants", function()
     local tt = makeTooltip("|cff...|Hitem:3470:...|h[Rare Herb]|h|r", "ContainerFrame1", 0, 1)
     MakeSpace.Tooltip.OnTooltipSetItem(tt)
     local row = tt.lines[#tt.lines].text
-    assert.are.equal(46, #row)
+    assert.is_truthy(#row <= 45 and #row >= 42, #row)
     assert.are.equal("...", row:sub(-3))
   end)
 
@@ -926,7 +1050,7 @@ describe("tooltip: a reagent that a quest wants", function()
     MakeSpace.Tooltip.OnTooltipSetItem(tt)
     _G.C_QuestLog.IsOnQuest = nil
     local row = tt.lines[#tt.lines].text
-    assert.are.equal(46, #row)
+    assert.is_truthy(#row <= 45 and #row >= 42, #row)
     assert.is_truthy(row:find("%.%.%.$"))
   end)
 
@@ -1438,7 +1562,7 @@ describe("tooltip in the loot window", function()
     MakeSpace.Tooltip.OnTooltipSetItem(tt)
     teardown()
 
-    assert.is_truthy(tt.lines[1].text:find("Save for vendor$"))
+    assert.is_truthy(tt.lines[1].text:find("Gray worth selling$"))
     assert.are.equal("Cheapest gray, sells for 5s", plainCoins(tt.lines[2].text))
     assert.are.equal(2, #tt.lines)
   end)

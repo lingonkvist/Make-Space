@@ -43,7 +43,7 @@ ZONE_OR_SORT = 17       # Questie quest field: positive = zone, negative = categ
 MIN_LEVEL_THAT_MATTERS = 11
 
 # Questie quest categories (negative zoneOrSort values) that are an event, with
-# the name shown to the player ("Bank it, for a Darkmoon Faire quest").
+# the name shown to the player ("Needed later, for a Darkmoon Faire quest").
 EVENT_SORTS = {
     -364: "Darkmoon Faire",
     -366: "Lunar Festival",

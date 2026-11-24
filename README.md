@@ -10,7 +10,7 @@ Bags fill up with things you are not sure about: a quest item with no quest left
 | Yellow (diamond) | Worth a glance. The tooltip says what to look at. |
 | None | No signal: Make Space does not know, or you still need the item. |
 
-Hover an item for the reason. On an item with no dot, the tooltip names the quest that still needs it or the professions that use it. A quest item with no quest for you in the data says "Quest item, no quest found".
+Hover an item for the reason. On an item with no dot, the tooltip names the quest that still needs it (unless it is more than 10 levels from acceptable) or the professions that use it. A quest item with no quest for you in the data says "Quest item, no quest found".
 
 ## What gets a dot
 
@@ -21,7 +21,7 @@ Hover an item for the reason. On an item with no dot, the tooltip names the ques
 - Bound gear 20 or more levels below you (rare and better stay yellow). Gear with a Use effect, proc or special Equip effect is left alone.
 - White armor your class cannot wear (yet), or that you have outgrown because you wear green or better in that slot.
 - White weapons your class can never learn, and ammo for a class with no matching ranged weapon. Follows Forever's own skill data (rogues use axes there).
-- The cheapest gray. Deleting it lights the next.
+- The cheapest gray. Deleting it lights the next. At a vendor, every gray that sells lights green (its price in the tooltip).
 - Trade goods that no recipe or quest uses.
 - Worth very little: recipes and reagents you cannot use (or have outleveled) when the auction pays too little to list and the whole slot sells for under 50c (5c per level above 10). A missing price never counts.
 - Tradable green gear (not for Enchanters) that auctions for about what a vendor pays: "Safe to vendor", with both prices shown.
@@ -33,16 +33,16 @@ Hover an item for the reason. On an item with no dot, the tooltip names the ques
 - Unused trade goods or a gray that sell for a fair price.
 - Things to open: clams, loot bags, and lockboxes (for a rogue who can Pick Lock).
 - Recipes for a profession you do not have (unbound ones).
-- **Bank it:** recipes more than 25 skill points above you, and reagents more than 50 above you (25 once you have stopped leveling that profession for 6 hours). A profession counts as idle after 12 hours without a skill gain and a new play session. Also a reagent whose next use is far ahead once your skill is past an earlier one. Stacks worth under 50c get no hint.
+- **Needed later:** recipes more than 25 skill points above you, and reagents more than 50 above you (25 once you have stopped leveling that profession for 6 hours). A profession counts as idle after 12 hours without a skill gain and a new play session. Also a reagent whose next use is far ahead once your skill is past an earlier one. A listed stack that costs next to nothing to buy again (about half the value where a gray stops being plain junk) gets a green instead: `Cheap to rebuy, used from Cooking 145`.
 - **Outleveled reagents:** once the last recipe that uses the item (directly, or through what it is turned into) has turned green. Copper bars stay safe while bronze still needs them. A quest that wants the item does not hold the hint back; the tooltip adds a quest row instead.
-- **Outleveled consumables:** food, drink, potions, elixirs, flasks and stat scrolls that need a level 10 or more below yours (15 from level 55). Food, drink and stat scrolls only when your bags hold a better one you can use. Potions say which to use instead: `Best for you: Major Healing Potion (level 45)`. Items with their own level limit, non-stat elixirs and food with an effect are left alone.
+- **Outleveled consumables:** food, drink, potions, elixirs, flasks and stat scrolls that need a level 10 or more below yours (15 from level 55). Food, drink and stat scrolls only when your bags hold a better one you can use. Potions say which to use instead: `Best for you: Major Healing Potion (level 45)`. Items with their own level limit, non-stat elixirs and food with an effect are left alone. A quest you could still take that wants the item is named under the hint.
 - Bandages that heal under 20% of your health (`Heals 9% of your health`), with your best known bandage named when you have one.
 - Mana potions, drinks and Intellect scrolls for classes that cannot use them.
 - Dropped crafting materials that none of your professions use (once both primary slots are taken; not for Cooking, First Aid or Fishing materials).
 - Quest items for the other faction only.
 - Library books, with who to hand them in to.
 - Blood Shards on a Horde character: 4 to Mangletooth for a buff.
-- Items for a quest far below your level, or one you cannot accept for another 10 levels: bank it. Darkmoon Faire and holiday quest items get the bank hint at any level, naming the event.
+- Items for a quest far below your level, or one you cannot accept for another 10 levels: needed later. Darkmoon Faire and holiday quest items get that hint at any level, naming the event.
 - Anything you mark yellow yourself.
 
 A tradable green loses its dot when the auction pays clearly more than a vendor, and the tooltip says why in one line (`Vendor 5c, auction up to 8s`).
@@ -77,7 +77,7 @@ Without Auctionator, nothing changes.
 
 ## In the bank
 
-Dots work in the bank and warband bank. Since people bank things on purpose, a verdict stays only when it holds for any character. Anything that depends on your professions, class or quests is at most yellow, "Bank it" and vendor hints are dropped, and "Consider auctioning" stays. Grays are thinned like in your bags.
+Dots work in the bank and warband bank. Since people bank things on purpose, a verdict stays only when it holds for any character. Anything that depends on your professions, class or quests is at most yellow, "Needed later" and vendor hints are dropped, and "Consider auctioning" stays. Grays are thinned like in your bags.
 
 ## Making room for loot
 
@@ -117,6 +117,8 @@ Blizzard bags and bank, Baganator (with Syndicator), EllesmereUI Bags and Bagnon
 Run `/makespace report` and paste it, with the bag addon you use. For one wrong item add `/makespace why [item]`. For a missing glow add `/makespace loot` with the loot window open.
 
 ## Development
+
+See `DESIGN.md` for the principles, the invariants and the ideas we turned down, and why.
 
 - Tests: `python3 -I tests/run_tests.py [name]` (needs `lupa`; a name runs only matching specs). `node tools/check_globals.js` catches stray globals. CI runs both.
 - `src/verdict.lua` decides and is pure. Use `Verdict.Judge` (named answer); `Evaluate` returns the same by position.

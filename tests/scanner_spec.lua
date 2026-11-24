@@ -442,6 +442,47 @@ describe("Scanner: grays worth some silver", function()
     assert.is_nil(dearer.verdict)
   end)
 
+  it("lights every gray that sells while a vendor window is open", function()
+    setUp({ [0] = { { id = 600 }, { id = 700 }, { id = 300 }, { id = 1002 } } }, { [0] = 0 })
+    MakeSpace.Scanner.SetVendorOpen(true)
+    MakeSpace.Scanner.ScanAll()
+    for slot = 1, 3 do
+      local result = MakeSpace.Scanner.GetResult(0, slot)
+      assert.are.equal("green", result.verdict)
+      assert.is_true(result.sellable)
+    end
+    assert.are.equal("Gray, sells for 5s", MakeSpace.Scanner.GetResult(0, 1).reason)
+    assert.are.equal("Gray, sells for 8s", MakeSpace.Scanner.GetResult(0, 2).reason)
+    -- No vendor price: nothing to sell, so it is thinned as usual (here the only
+    -- one, so it keeps its delete dot) and never offered to a vendor.
+    local unsellable = MakeSpace.Scanner.GetResult(0, 4)
+    assert.are.equal("green", unsellable.verdict)
+    assert.are.equal("Cheapest gray, no vendor value", unsellable.reason)
+    assert.is_truthy(not unsellable.sellable)
+    MakeSpace.Scanner.SetVendorOpen(false)
+  end)
+
+  it("goes back to one dot when the vendor window closes", function()
+    setUp({ [0] = { { id = 600 }, { id = 700 }, { id = 300 } } }, { [0] = 0 })
+    MakeSpace.Scanner.SetVendorOpen(true)
+    MakeSpace.Scanner.ScanAll()
+    MakeSpace.Scanner.SetVendorOpen(false)
+    MakeSpace.Scanner.ScanAll()
+    local lit = 0
+    for slot = 1, 3 do
+      if MakeSpace.Scanner.GetResult(0, slot).verdict then lit = lit + 1 end
+    end
+    assert.are.equal(1, lit)
+  end)
+
+  it("counts the vendor grays in the summary", function()
+    setUp({ [0] = { { id = 600 }, { id = 300 } } }, { [0] = 0 })
+    MakeSpace.Scanner.SetVendorOpen(true)
+    MakeSpace.Scanner.ScanAll()
+    assert.are.equal(2, MakeSpace.Scanner.Counts().green)
+    MakeSpace.Scanner.SetVendorOpen(false)
+  end)
+
   it("lets a cheap green gray win over a gray worth silver", function()
     setUp({ [0] = { { id = 600 }, { id = 300 } } }, { [0] = 0 })
     MakeSpace.Scanner.ScanAll()
@@ -478,7 +519,7 @@ describe("Scanner: recipes", function()
     MakeSpace.Scanner.ScanAll()
     local result = MakeSpace.Scanner.GetResult(0, 1)
     assert.are.equal("yellow", result.verdict)
-    assert.are.equal("Bank it, needs Alchemy 225", result.reason)
+    assert.are.equal("Needed later, at Alchemy 225", result.reason)
   end)
 
   it("finds secondary professions the modern API leaves out", function()
@@ -514,7 +555,7 @@ describe("Scanner: recipes", function()
     local result = MakeSpace.Scanner.GetResult(0, 1)
     _G.MakeSpaceDB = saved
     assert.are.equal("yellow", result.verdict)
-    assert.are.equal("Bank it, needs Alchemy 101", result.reason)
+    assert.are.equal("Needed later, at Alchemy 101", result.reason)
   end)
 
   it("forgets the history of a profession you no longer have, and shows idle in the summary", function()
@@ -981,7 +1022,7 @@ describe("Scanner: tooltip reads are kept", function()
     MakeSpace.Scanner.ScanAll()
     local first = MakeSpace.Scanner.GetResult(0, 1).reason
     MakeSpace.Scanner.ScanAll()
-    assert.are.equal("Bank it, needs Alchemy 225", first)
+    assert.are.equal("Needed later, at Alchemy 225", first)
     assert.are.equal(first, MakeSpace.Scanner.GetResult(0, 1).reason)
   end)
 

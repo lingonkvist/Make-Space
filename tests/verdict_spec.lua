@@ -23,7 +23,7 @@ describe("Soulbound gear far below my level (reqLevel)", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Required level 20, you are 45", reason)
+    assert.are.equal("Requires level 20, you are 45", reason)
   end)
 
   it("yellow when soulbound and 10-19 levels below", function()
@@ -33,7 +33,7 @@ describe("Soulbound gear far below my level (reqLevel)", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Low level gear (needs 30, you are 42)", reason)
+    assert.are.equal("Low level gear (requires 30, you are 42)", reason)
   end)
 
   it("no dot when soulbound but only 9 levels below", function()
@@ -100,7 +100,7 @@ describe("Soulbound gear: itemLevel when reqLevel is 0", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Item level 10, you are 32", reason)
+    assert.are.equal("Item level 10", reason)
   end)
 
   it("yellow when reqLevel=0 but itemLevel is 10-19 below player", function()
@@ -171,7 +171,7 @@ describe("Soulbound gear: itemLevel when reqLevel is 0", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Required level 30, you are 55", reason)
+    assert.are.equal("Requires level 30, you are 55", reason)
   end)
 end)
 
@@ -188,8 +188,8 @@ describe("Quest-starter items for completed quests", function()
     local verdict, reason, detail = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Quest completed", reason)
-    assert.are.equal("The Lost Idol", detail)
+    assert.are.equal("The Lost Idol (completed)", reason)
+    assert.is_nil(detail)
   end)
 
   it("includes quest level from QuestInfo in detail", function()
@@ -204,8 +204,8 @@ describe("Quest-starter items for completed quests", function()
     local verdict, reason, detail = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Quest completed", reason)
-    assert.are.equal("[34] Bad Medicine", detail)
+    assert.are.equal("[34] Bad Medicine (completed)", reason)
+    assert.is_nil(detail)
   end)
 
   it("no dot when item starts a quest that is NOT completed", function()
@@ -258,7 +258,7 @@ describe("Quest-starter items for completed quests", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Required level 10, you are 40", reason)
+    assert.are.equal("Requires level 10, you are 40", reason)
   end)
 end)
 
@@ -596,7 +596,7 @@ describe("Quest objective items", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Required level 10, you are 40", reason)
+    assert.are.equal("Requires level 10, you are 40", reason)
   end)
 
   it("quest-starter rule takes priority over quest-objective rule", function()
@@ -626,8 +626,8 @@ describe("Quest objective items", function()
     local verdict, reason, detail = MakeSpace.Verdict.Evaluate(item, state)
 
     assert.are.equal("green", verdict)
-    assert.are.equal("Quest completed", reason)
-    assert.are.equal("[36] Crushridge Bounty", detail)
+    assert.are.equal("[36] Crushridge Bounty (completed)", reason)
+    assert.is_nil(detail)
   end)
 end)
 
@@ -735,7 +735,7 @@ describe("Trade goods not used in any recipe", function()
 
     -- Level gap rule should fire first, not 5.1
     assert.are.equal("green", verdict)
-    assert.are.equal("Required level 10, you are 60", reason)
+    assert.are.equal("Requires level 10, you are 60", reason)
   end)
 
   it("no dot when item is in ClassReagents", function()
@@ -885,7 +885,7 @@ describe("Quest-provided notes and crates", function()
   it("is green once its quest is done, though the game calls it a consumable", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(parchment(true), state)
     assert.are.equal("green", verdict)
-    assert.are.equal("Quest completed", reason)
+    assert.is_truthy(reason:find("(completed)", 1, true), reason)
   end)
 
   it("stays quiet while the quest is open", function()
@@ -1590,11 +1590,11 @@ describe("Recipes and reagents you cannot use yet", function()
     assert.is_truthy(reason:find("You don't have this profession", 1, true))
   end)
 
-  it("recipe whose level requirement is far above yours says to bank it", function()
+  it("recipe whose level requirement is far above yours is needed later", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(recipe({ reqLevel = 45 }), state({ Alchemy = 100 }))
 
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Bank it, needs level 45", reason)
+    assert.are.equal("Needed later, at level 45", reason)
   end)
 
   it("a recipe at or below your level is left alone", function()
@@ -1605,16 +1605,16 @@ describe("Recipes and reagents you cannot use yet", function()
     assert.is_nil((MakeSpace.Verdict.Evaluate(recipe({ reqLevel = 33 }), state({ Alchemy = 100 }))))
   end)
 
-  it("a recipe four levels above yours says to bank it", function()
+  it("a recipe four levels above yours is needed later", function()
     local _, reason = MakeSpace.Verdict.Evaluate(recipe({ reqLevel = 34 }), state({ Alchemy = 100 }))
-    assert.are.equal("Bank it, needs level 34", reason)
+    assert.are.equal("Needed later, at level 34", reason)
   end)
 
-  it("recipe far above your skill says to bank it", function()
+  it("recipe far above your skill is needed later", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(recipe({ requiredSkill = 200 }), state({ Alchemy = 100 }))
 
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Bank it, needs Alchemy 200", reason)
+    assert.are.equal("Needed later, at Alchemy 200", reason)
   end)
 
   it("recipe within 25 skill points stays silent while you level the profession", function()
@@ -1623,10 +1623,10 @@ describe("Recipes and reagents you cannot use yet", function()
     assert.is_nil(verdict)
   end)
 
-  it("recipe 26 skill points out of reach says to bank it", function()
+  it("recipe 26 skill points out of reach is needed later", function()
     local _, reason = MakeSpace.Verdict.Evaluate(recipe({ requiredSkill = 126 }), state({ Alchemy = 100 }))
 
-    assert.are.equal("Bank it, needs Alchemy 126", reason)
+    assert.are.equal("Needed later, at Alchemy 126", reason)
   end)
 
   it("a profession you have stopped leveling banks any recipe out of reach", function()
@@ -1634,7 +1634,7 @@ describe("Recipes and reagents you cannot use yet", function()
     idleState.professionIdle = { Alchemy = true }
 
     local _, reason = MakeSpace.Verdict.Evaluate(recipe({ requiredSkill = 101 }), idleState)
-    assert.are.equal("Bank it, needs Alchemy 101", reason)
+    assert.are.equal("Needed later, at Alchemy 101", reason)
     assert.is_nil((MakeSpace.Verdict.Evaluate(recipe({ requiredSkill = 100 }), idleState)))
   end)
 
@@ -1661,11 +1661,11 @@ describe("Recipes and reagents you cannot use yet", function()
     assert.is_truthy(verdict ~= "green")
   end)
 
-  it("reagent your profession will not use for a long while says to bank it", function()
+  it("reagent your profession will not use for a long while is needed later", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(MITHRIL_BAR, state({ Blacksmithing = 100 }))
 
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Bank it, used from Blacksmithing 200", reason)
+    assert.are.equal("Needed later, from Blacksmithing 200", reason)
   end)
 
   it("reagent within reach stays silent", function()
@@ -1691,7 +1691,7 @@ describe("Recipes and reagents you cannot use yet", function()
     assert.is_nil((MakeSpace.Verdict.Evaluate(MITHRIL_BAR, idleState)))
     idleState.professionRanks.Blacksmithing = 174
     local _, reason = MakeSpace.Verdict.Evaluate(MITHRIL_BAR, idleState)
-    assert.are.equal("Bank it, used from Blacksmithing 200", reason)
+    assert.are.equal("Needed later, from Blacksmithing 200", reason)
   end)
 
   it("reagent another of your professions already uses stays silent", function()
@@ -2248,13 +2248,13 @@ describe("Items for a quest far below you", function()
     local verdict, reason = MakeSpace.Verdict.Evaluate(questItem(), at(30))
 
     assert.are.equal("yellow", verdict)
-    assert.are.equal("Quest is far below you, consider abandoning it", reason)
+    assert.are.equal("Quest in your log is far below you", reason)
   end)
 
   it("says it is probably not worth taking when the quest is not in your log", function()
     local _, reason = MakeSpace.Verdict.Evaluate(questItem({ onOpenQuest = false }), at(30))
 
-    assert.are.equal("Quest is far below you, probably not worth taking", reason)
+    assert.are.equal("Quest is far below you", reason)
   end)
 
   it("stays silent while the quest is within 10 levels", function()
@@ -2377,10 +2377,10 @@ describe("Verdicts in the bank", function()
   end)
 
   it("drops hints that tell you to bank something already in the bank", function()
-    local _, bankLevel = MakeSpace.Verdict.Note("bank_level", 40)
-    local _, usedFrom = MakeSpace.Verdict.Note("bank_used_from", "Alchemy", 200)
-    assert.is_nil(forBank("recipe", "yellow", "Bank it, needs level 40", bankLevel).verdict)
-    assert.is_nil(forBank("distant_reagent", "yellow", "Bank it, used from Alchemy 200", usedFrom).verdict)
+    local _, bankLevel = MakeSpace.Verdict.Note("later_level", 40)
+    local _, usedFrom = MakeSpace.Verdict.Note("later_used_from", "Alchemy", 200)
+    assert.is_nil(forBank("recipe", "yellow", "Needed later, at level 40", bankLevel).verdict)
+    assert.is_nil(forBank("distant_reagent", "yellow", "Needed later, from Alchemy 200", usedFrom).verdict)
   end)
 
   it("drops the abandon-the-quest hint", function()
@@ -2579,29 +2579,31 @@ describe("Yellow headings", function()
 
   it("defines each yellow once: reason, short heading, detail underneath", function()
     local cases = {
-      { { "outleveled_gear", false, true, 30, 50 },       "Low item level (30 for level 50)",           "Outleveled gear",     "Item level 30, you are 50" },
-      { { "outleveled_gear", false, false, 30, 45 },       "Low level gear (needs 30, you are 45)",     "Outleveled gear",     "Required level 30, you are 45" },
-      { { "outleveled_gear", true, false, 10, 40 },  "Very low level gear (needs 10, you are 40)", "Outleveled gear",    "Required level 10, you are 40" },
-      { { "outleveled_gear", true, true, 30, 60 },  "Very low item level (30 for level 60)",      "Outleveled gear",     "Item level 30, you are 60" },
-      { { "quest_abandon" },                "Quest is far below you, consider abandoning it", "Outleveled quest", "Consider abandoning it" },
-      { { "quest_not_worth" },              "Quest is far below you, probably not worth taking", "Outleveled quest", "Probably not worth it" },
-      { { "gray_worth", "4s 65c" },         "Cheapest gray, sells for 4s 65c",           "Save for vendor",     "Cheapest gray, sells for 4s 65c" },
+      { { "outleveled_gear", false, 0, 30, 50 },          "Low item level (30 for level 50)",           "Outleveled gear",     "Item level 30" },
+      { { "outleveled_gear", false, 25, 30, 50 },         "Low level gear (requires 25, item level 30, you are 50)", "Outleveled gear", "Requires level 25, item level 30" },
+      { { "outleveled_gear", false, 30, 30, 45 },          "Low level gear (requires 30, you are 45)",     "Outleveled gear",     "Requires level 30, you are 45" },
+      { { "outleveled_gear", true, 10, 5, 40 },  "Very low level gear (requires 10, you are 40)", "Outleveled gear",    "Requires level 10, you are 40" },
+      { { "outleveled_gear", true, 0, 30, 60 },  "Very low item level (30 for level 60)",      "Outleveled gear",     "Item level 30" },
+      { { "quest_abandon" },                "Quest in your log is far below you", "Outleveled quest", "Consider abandoning it" },
+      { { "quest_not_worth" },              "Quest is far below you", "Outleveled quest", "Probably not worth it" },
+      { { "gray_worth", "4s 65c" },         "Cheapest gray, sells for 4s 65c",           "Gray worth selling",     "Cheapest gray, sells for 4s 65c" },
       { { "no_known_use", "3s" },           "Not used for any quest or recipe, sells for 3s", "No known use",   nil },
       { { "not_your_profession" },          "You don't have this profession",            "Not your profession", nil },
-      { { "bank_skill", "Alchemy", 126 },   "Bank it, needs Alchemy 126",                "Bank it",             "Needs Alchemy 126" },
-      { { "bank_level", 30 },               "Bank it, needs level 30",                   "Bank it",             "Needs level 30" },
-      { { "bank_used_from", "Mining", 175 }, "Bank it, used from Mining 175",            "Bank it",             "Used from Mining 175" },
+      { { "later_skill", "Alchemy", 126 },   "Needed later, at Alchemy 126",                "Needed later",             "Requires Alchemy 126" },
+      { { "later_level", 30 },               "Needed later, at level 30",                   "Needed later",             "Requires level 30" },
+      { { "later_used_from", "Mining", 175 }, "Needed later, from Mining 175",            "Needed later",             "Used from Mining 175" },
       { { "outleveled_reagent", "Mining", 125 }, "Outleveled, Mining recipes use it up to 125", "Outleveled reagent", "Mining recipes use it up to 125" },
       { { "low_level_consumable", "food", 5, 30 }, "Outleveled food (level 5, you are 30)", "Outleveled food",    nil },
       { { "weak_bandage", 9 },               "Weak bandage, heals 9% of your health", "Weak bandage", "Heals 9% of your health" },
-      { { "weak_bandage", 9, "Silk Bandage" }, "Weak bandage, heals 9% of your health", "Weak bandage", "Heals 9% of your health\nBest for you: Silk Bandage" },
+      { { "weak_bandage", 9, "Silk Bandage" }, "Weak bandage, heals 9% of your health", "Weak bandage", "Heals 9%, best for you: Silk Bandage" },
       { { "open_it" },                      "Open it, the contents may stack",           "Open it",             "Contents may stack" },
       { { "no_mana", "Warriors" },          "Warriors have no mana", "Useless to Warriors", nil },
       { { "other_faction_quest", "Alliance" }, "Only used by Alliance quests", "Alliance-only quest item", nil },
       { { "no_use_stat", "Warriors", "Intellect" }, "Warriors get nothing from Intellect", "Useless to Warriors", nil },
       { { "wrong_class_reagent", "Mage, Priest only (world drop)" }, "Mage, Priest only (world drop)", "Wrong class reagent", "Mage, Priest only (world drop)" },
       { { "other_profession_reagent", { "Alchemy", "Tailoring" } }, "Only used by professions you don't have", "Not your profession", "Used by Alchemy, Tailoring" },
-      { { "other_profession_reagent", { "A", "B", "C", "D" } }, "Only used by professions you don't have", "Not your profession", "Used by 4 professions" },
+      { { "other_profession_reagent", { "A", "B", "C" } }, "Only used by professions you don't have", "Not your profession", "Used by A, B +1" },
+      { { "other_profession_reagent", { "A", "B", "C", "D" } }, "Only used by professions you don't have", "Not your profession", "Used by A, B +2" },
       { { "library_book", "Alliance" },     "Library book, hand it in to Garion Wendell in Stormwind", "Library book", "Hand in to Garion Wendell, Stormwind" },
       { { "library_book", "Horde" },        "Library book, hand it in to Owen Thadd in Undercity", "Library book", "Hand in to Owen Thadd, Undercity" },
       { { "library_book", nil },            "Library book, hand it in to the librarian in Stormwind or Undercity", "Library book", "Hand in to Stormwind or Undercity" },
@@ -2627,7 +2629,8 @@ describe("Yellow headings", function()
   it("puts the greens' words in one place too", function()
     local green = MakeSpace.Notes.Green
     local cases = {
-      { { "quest_completed", "Quest: Foo" },   "Quest completed", "Quest: Foo" },
+      { { "quest_completed", "Quest: Foo" },   "Quest: Foo (completed)", nil },
+      { { "quest_completed" },                 "Quest completed", nil },
       { { "quests_completed", 3 },             "All 3 quests completed", nil },
       { { "vendor_reagent" },                  "Vendor reagent", nil },
       { { "vendor_reagent", { "Alchemy", "Cooking" } }, "Vendor reagent (Alchemy, Cooking)", nil },
@@ -2643,8 +2646,9 @@ describe("Yellow headings", function()
       { { "worth_little", "Outleveled reagent" }, "Outleveled reagent, worth very little", nil },
       { { "worth_little" },                    "Worth very little", nil },
       { { "marked" },                          "Marked by you", nil },
-      { { "outleveled_gear", true, 30, 50 },   "Item level 30, you are 50", nil },
-      { { "outleveled_gear", false, 30, 45 },  "Required level 30, you are 45", nil },
+      { { "outleveled_gear", 0, 30, 50 },      "Item level 30", nil },
+      { { "outleveled_gear", 25, 30, 50 },     "Requires level 25, item level 30", nil },
+      { { "outleveled_gear", 30, 30, 45 },     "Requires level 30, you are 45", nil },
     }
     for _, case in ipairs(cases) do
       local reason, detail = green(unpack(case[1]))
@@ -2660,7 +2664,7 @@ describe("Yellow headings", function()
     assert.are.equal("yellow", verdict)
     assert.are.equal("level_gap", rule)
     assert.are.equal("Outleveled gear", heading.title)
-    assert.are.equal("Required level 30, you are 42", heading.detail)
+    assert.are.equal("Requires level 30, you are 42", heading.detail)
     local _, _, _, _, _, flagged = MakeSpace.Verdict.Evaluate({ id = 1, isFlagged = true }, state)
     assert.are.equal("Marked by you", flagged.title)
     assert.is_nil(flagged.detail)
@@ -2854,7 +2858,7 @@ describe("Gear with a low required level but a real item level", function()
       reqLevel = 1, itemLevel = 5, sellPrice = 100, count = 1 }
     local verdict, reason = MakeSpace.Verdict.Evaluate(item, state)
     assert.are.equal("green", verdict)
-    assert.are.equal("Item level 5, you are 27", reason)
+    assert.are.equal("Item level 5", reason)
   end)
 end)
 
@@ -3244,7 +3248,7 @@ describe("Reagents only used by professions you lack", function()
   it("leaves the price line out, and stops suggesting the auction house, when it pays next to nothing", function()
     -- a couple of copper at the auction, and a vendor price it does not clearly beat
     withData({ AuctionPriceCeiling = { [8001] = 3 } }, function()
-      local verdict, reason, _, _, _, _, note = MakeSpace.Verdict.Evaluate(item(), player(TWO))
+      local verdict, reason, _, _, _, _, note = MakeSpace.Verdict.Evaluate(item({ count = 8 }), player(TWO))
       assert.are.equal("yellow", verdict)
       assert.is_nil(note)
       assert.are.equal("Only used by professions you don't have", reason)
@@ -3430,16 +3434,16 @@ describe("Items for a quest far above you", function()
     withRequired(FAR, function()
       local verdict, reason, _, _, rule, heading = MakeSpace.Verdict.Evaluate(questItem(), at(30))
       assert.are.equal("yellow", verdict)
-      assert.are.equal("Bank it, quest needs level 55", reason)
+      assert.are.equal("Needed later, quest requires level 55", reason)
       assert.are.equal("distant_quest_item", rule)
-      assert.are.equal("Bank it", heading.title)
+      assert.are.equal("Needed later", heading.title)
       assert.are.equal("[60] Far Quest", heading.detail)
     end)
   end)
 
   it("leaves a Soul Shard alone even though a far quest asks for it", function()
     withRequired({ [5201] = 55 }, function()
-      -- The warlock bag dump: Soul Shards were marked "Bank it, quest needs level 31".
+      -- The warlock bag dump: Soul Shards were marked "Needed later, quest requires level 31".
       local shard = questItem({ id = 6265, classID = 15, subclassID = 1 })
       local verdict = MakeSpace.Verdict.Evaluate(shard, at(11))
       assert.is_nil(verdict)
@@ -3451,7 +3455,7 @@ describe("Items for a quest far above you", function()
       local gem = questItem({ id = 9400, classID = 3 })
       local verdict, reason = MakeSpace.Verdict.Evaluate(gem, at(30))
       assert.are.equal("yellow", verdict)
-      assert.are.equal("Bank it, quest needs level 55", reason)
+      assert.are.equal("Needed later, quest requires level 55", reason)
     end)
   end)
 
@@ -3460,9 +3464,9 @@ describe("Items for a quest far above you", function()
     withRequired({ [5201] = 30 }, function()
       local verdict, reason, _, _, rule, heading = MakeSpace.Verdict.Evaluate(questItem(), at(30))
       assert.are.equal("yellow", verdict)
-      assert.are.equal("Bank it, for a Darkmoon Faire quest", reason)
+      assert.are.equal("Needed later, for a Darkmoon Faire quest", reason)
       assert.are.equal("distant_quest_item", rule)
-      assert.are.equal("Bank it", heading.title)
+      assert.are.equal("Needed later", heading.title)
       assert.are.equal("Darkmoon Faire: [60] Far Quest", heading.detail)
       assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(questItem(), at(60))))
     end, { [5201] = "Darkmoon Faire" })
@@ -3471,7 +3475,7 @@ describe("Items for a quest far above you", function()
   it("works from the event list alone, and says what it is for a seasonal quest", function()
     withRequired(nil, function()
       local _, reason, _, _, _, heading = MakeSpace.Verdict.Evaluate(questItem(), at(60))
-      assert.are.equal("Bank it, for a seasonal event quest", reason)
+      assert.are.equal("Needed later, for a seasonal event quest", reason)
       assert.are.equal("Seasonal event: [60] Far Quest", heading.detail)
     end, { [5201] = "seasonal event" })
   end)
@@ -3487,7 +3491,7 @@ describe("Items for a quest far above you", function()
     withRequired({ [5203] = 50 }, function()
       local item = questItem({ questItemQuestIDs = { 5201, 5203 }, openQuestIDs = { 5201, 5203 } })
       local _, reason = MakeSpace.Verdict.Evaluate(item, at(30))
-      assert.are.equal("Bank it, quest needs level 50", reason)
+      assert.are.equal("Needed later, quest requires level 50", reason)
     end, { [5201] = "Darkmoon Faire" })
   end)
 
@@ -3529,7 +3533,7 @@ describe("Items for a quest far above you", function()
     withRequired({ [5201] = 55, [5203] = 48 }, function()
       local item = questItem({ questItemQuestIDs = { 5201, 5203 }, openQuestIDs = { 5201, 5203 } })
       local _, reason, _, _, _, heading = MakeSpace.Verdict.Evaluate(item, at(30))
-      assert.are.equal("Bank it, quest needs level 48", reason)
+      assert.are.equal("Needed later, quest requires level 48", reason)
       assert.are.equal("[60] Early Quest", heading.detail)
     end)
   end)
@@ -3563,8 +3567,8 @@ describe("Items for a quest far above you", function()
   end)
 
   it("is not shown in the bank", function()
-    local _, heading = MakeSpace.Verdict.Note("bank_quest", 55, "[60] Far Quest")
-    local bank = MakeSpace.Verdict.ForBank({ verdict = "yellow", reason = "Bank it, quest needs level 55",
+    local _, heading = MakeSpace.Verdict.Note("later_quest", 55, "[60] Far Quest")
+    local bank = MakeSpace.Verdict.ForBank({ verdict = "yellow", reason = "Needed later, quest requires level 55",
       rule = "distant_quest_item", heading = heading })
     assert.is_nil(bank.verdict)
   end)
@@ -4135,7 +4139,7 @@ describe("Banking a reagent when the next use is far ahead", function()
     withChains(function()
       local verdict, reason = MakeSpace.Verdict.Evaluate(linenCloth(), crafter(150, 160))
       assert.are.equal("yellow", verdict)
-      assert.are.equal("Bank it, used from Blacksmithing 200", reason)
+      assert.are.equal("Needed later, from Blacksmithing 200", reason)
     end)
   end)
 
@@ -4242,7 +4246,7 @@ describe("Recipes for a profession you do not have", function()
   end)
 end)
 
-describe("Banking a reagent that costs next to nothing to buy again", function()
+describe("A reagent for a skill far ahead that costs next to nothing to buy again", function()
   local function withChains(fn)
     local saved = { MakeSpace.Data.ReagentProfessions, MakeSpace.Data.ReagentChains, MakeSpace.Data.AuctionPriceCeiling }
     MakeSpace.Data.ReagentProfessions = { [8101] = { { "Blacksmithing", 1, 200, 250, 280 } } }
@@ -4260,27 +4264,151 @@ describe("Banking a reagent that costs next to nothing to buy again", function()
     return good
   end
 
-  it("says nothing for a stack worth a few copper", function()
+  it("is green and says why, for a listed stack worth a few copper", function()
     withChains(function()
       MakeSpace.Data.AuctionPriceCeiling = { [8101] = 6 }
-      assert.is_nil((MakeSpace.Verdict.Evaluate(stack(), state)))
+      local judged = MakeSpace.Verdict.Judge(stack(), state)
+      assert.are.equal("green", judged.verdict)
+      assert.are.equal("Cheap to rebuy, used from Blacksmithing 200", judged.reason)
+      assert.are.equal("distant_reagent", judged.rule)
+      assert.is_true(judged.worthLittle)
     end)
   end)
 
-  it("still says bank it for a stack that is worth the slot", function()
+  it("says it is needed later for a stack worth the slot", function()
     withChains(function()
       MakeSpace.Data.AuctionPriceCeiling = { [8101] = 90 }
       local verdict, reason = MakeSpace.Verdict.Evaluate(stack({ count = 20 }), state)
       assert.are.equal("yellow", verdict)
-      assert.is_truthy(reason:find("Bank it", 1, true))
+      assert.are.equal("Needed later, from Blacksmithing 200", reason)
     end)
   end)
 
-  it("still says bank it with no price data: an unlisted item may be rare", function()
+  it("stays yellow with no price data: an unlisted item may be rare", function()
     withChains(function()
       MakeSpace.Data.AuctionPriceCeiling = nil
       assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(stack(), state)))
     end)
+  end)
+
+  it("stays yellow when the item is listed but missing from this price table", function()
+    withChains(function()
+      MakeSpace.Data.AuctionPriceCeiling = { [9999] = 6 }
+      assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(stack(), state)))
+    end)
+  end)
+
+  it("is never green with no vendor price, or once bound, but says nothing", function()
+    withChains(function()
+      MakeSpace.Data.AuctionPriceCeiling = { [8101] = 6 }
+      assert.is_nil((MakeSpace.Verdict.Evaluate(stack({ sellPrice = 0 }), state)))
+      assert.is_nil((MakeSpace.Verdict.Evaluate(stack({ isBound = true }), state)))
+    end)
+  end)
+
+  it("stays yellow just above the line and turns green just under it", function()
+    withChains(function()
+      -- Level 40: the line is half the gray bar, 502c, and the ceiling is padded up.
+      MakeSpace.Data.AuctionPriceCeiling = { [8101] = 1 }
+      local line = MakeSpace.Verdict.WorthLittleLine(state)
+      assert.are.equal(502, line)
+      assert.are.equal("green", (MakeSpace.Verdict.Evaluate(stack({ sellPrice = 50, count = 10 }), state)))
+      assert.are.equal("yellow", (MakeSpace.Verdict.Evaluate(stack({ sellPrice = 51, count = 10 }), state)))
+    end)
+  end)
+
+  it("is never green while a quest wants it or it can be opened, but says nothing", function()
+    withChains(function()
+      MakeSpace.Data.AuctionPriceCeiling = { [8101] = 6 }
+      local wanted = stack({ questItemQuestIDs = { 501 }, allQuestObjectivesCompleted = false })
+      assert.is_nil((MakeSpace.Verdict.Evaluate(wanted, state)))
+      -- Openable: the open-it hint speaks, never the cheap-to-rebuy green.
+      local verdict, _, _, _, rule = MakeSpace.Verdict.Evaluate(stack({ hasLoot = true }), state)
+      assert.are.equal("yellow", verdict)
+      assert.are.equal("openable", rule)
+    end)
+  end)
+
+  it("is not shown at all once the item is in the bank", function()
+    local shown = MakeSpace.Verdict.ForBank({ verdict = "green", reason = "Cheap to rebuy, used from Mining 175",
+                                            rule = "distant_reagent" })
+    assert.is_nil(shown.verdict)
+  end)
+end)
+
+describe("A completed quest item that no vendor buys", function()
+  local function questItem(overrides)
+    local item = { id = 17781, classID = 12, quality = 1, count = 1, sellPrice = 0, isBound = false,
+                   questItemQuestIDs = { 7067 }, allQuestObjectivesCompleted = true }
+    for key, value in pairs(overrides or {}) do item[key] = value end
+    return item
+  end
+  local state = { class = "Warrior", playerClass = "WARRIOR", level = 50, priceAgeDays = 4 }
+
+  local function withPrices(prices, fn)
+    local saved = MakeSpace.Data.AuctionPriceCeiling
+    MakeSpace.Data.AuctionPriceCeiling = prices
+    local ok, err = pcall(fn)
+    MakeSpace.Data.AuctionPriceCeiling = saved
+    assert.is_truthy(ok, err)
+  end
+
+  it("is green when the auction pays about a silver", function()
+    withPrices({ [17781] = 100 }, function()
+      local verdict, reason = MakeSpace.Verdict.Evaluate(questItem(), state)
+      assert.are.equal("green", verdict)
+      assert.is_truthy(reason:find("(completed)", 1, true), reason)
+    end)
+  end)
+
+  it("is still held back when the auction pays real money", function()
+    withPrices({ [17781] = 20000 }, function()
+      assert.is_nil((MakeSpace.Verdict.Evaluate(questItem(), state)))
+    end)
+  end)
+
+  it("is still held back with no price data at all", function()
+    withPrices(nil, function()
+      MakeSpace.Data.AuctionMarketMissing = true
+      local verdict = MakeSpace.Verdict.Evaluate(questItem(), state)
+      MakeSpace.Data.AuctionMarketMissing = nil
+      assert.is_nil(verdict)
+    end)
+  end)
+
+  it("keeps the auction check when a vendor buys it", function()
+    withPrices({ [17781] = 300 }, function()
+      assert.are.equal("green", (MakeSpace.Verdict.Evaluate(questItem(), state)))
+      assert.is_nil((MakeSpace.Verdict.Evaluate(questItem({ sellPrice = 10 }), state)))
+    end)
+  end)
+end)
+
+describe("A hint that an item is needed later", function()
+  it("is dropped while a quest in your log wants the item", function()
+    MakeSpace.Data.ReagentProfessions = { [8101] = { { "Blacksmithing", 1, 200, 250, 280 } } }
+    MakeSpace.Data.ReagentChains = nil
+    local state = { level = 40, playerClass = "WARRIOR", professionNames = { Blacksmithing = true },
+                    professionRanks = { Blacksmithing = 60 }, professionsKnown = true }
+    local function reagent(onQuest)
+      return { id = 8101, classID = 7, subClassID = 7, quality = 1, sellPrice = 400, maxStack = 20, count = 10,
+               onOpenQuest = onQuest }
+    end
+    local verdict, reason = MakeSpace.Verdict.Evaluate(reagent(false), state)
+    assert.are.equal("yellow", verdict)
+    assert.is_truthy(reason:find("Needed later", 1, true))
+    assert.is_nil((MakeSpace.Verdict.Evaluate(reagent(true), state)))
+  end)
+end)
+
+describe("The worth-little line", function()
+  it("is half the gray bar, and never under the old flat floor or 5c a level", function()
+    local line = MakeSpace.Verdict.WorthLittleLine
+    assert.are.equal(50, line({ level = 1 }))
+    assert.are.equal(100, line({ level = 20 }))
+    assert.are.equal(150, line({ level = 30 }))
+    assert.are.equal(616, line({ level = 43 }))
+    assert.are.equal(1262, line({ level = 60 }))
   end)
 end)
 
@@ -4485,7 +4613,7 @@ describe("Naming the best potion or bandage", function()
     local verdict, heading = evaluate(bandage(HEAVY_LINEN, 114), at(40, { maxHealth = 2000, bestBandageID = SILK }))
     assert.are.equal("yellow", verdict)
     assert.are.equal("Weak bandage", heading.title)
-    assert.are.equal("Heals 6% of your health\nBest for you: Silk Bandage", heading.detail)
+    assert.are.equal("Heals 6%, best for you: Silk Bandage", heading.detail)
   end)
 
   it("gives no suggestion without First Aid, or when this is already the best you make", function()

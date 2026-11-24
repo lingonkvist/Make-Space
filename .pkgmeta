@@ -4,6 +4,7 @@ ignore:
   - tests
   - tools
   - README.md
+  - DESIGN.md
   - .luacheckrc
   - .github
   - .vscode
