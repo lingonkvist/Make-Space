@@ -17,6 +17,43 @@ MakeSpace.Data.ProtectedItems = {
   [268416] = "Plant in a Greenhouse, or combine in a Seed Hybridizer", -- Uncommon Herb Seeds
   [268417] = "Plant in a Greenhouse, or combine in a Seed Hybridizer", -- Unusual Herb Seeds
   [268418] = "Plant in a Herbalism Greenhouse (camp item)", -- Scarce Herb Seeds
+  -- Artisan crates (Forever): a Waylaid Crate uses up crafted goods from one
+  -- profession group and becomes a Sealed Artisan Crate, which is handed in to your
+  -- faction's trade representative for the currency that buys profession recipes.
+  [248549] = "Fill with crafted goods, turn in for recipes",
+  [248682] = "Fill with crafted goods, turn in for recipes",
+  [248683] = "Fill with crafted goods, turn in for recipes",
+  [248684] = "Fill with crafted goods, turn in for recipes",
+  [248685] = "Fill with crafted goods, turn in for recipes",
+  [248686] = "Fill with crafted goods, turn in for recipes",
+  [248687] = "Fill with crafted goods, turn in for recipes",
+  [248688] = "Fill with crafted goods, turn in for recipes",
+  [248689] = "Fill with crafted goods, turn in for recipes",
+  [248690] = "Fill with crafted goods, turn in for recipes",
+  [248691] = "Fill with crafted goods, turn in for recipes",
+  [248692] = "Fill with crafted goods, turn in for recipes",
+  [248693] = "Fill with crafted goods, turn in for recipes",
+  [248694] = "Fill with crafted goods, turn in for recipes",
+  [248695] = "Fill with crafted goods, turn in for recipes",
+  [248696] = "Fill with crafted goods, turn in for recipes",
+  [248697] = "Fill with crafted goods, turn in for recipes",
+  [248698] = "Fill with crafted goods, turn in for recipes",
+  [248699] = "Fill with crafted goods, turn in for recipes",
+  [248702] = "Fill with crafted goods, turn in for recipes",
+  [248703] = "Fill with crafted goods, turn in for recipes",
+  [248704] = "Fill with crafted goods, turn in for recipes",
+  [248705] = "Fill with crafted goods, turn in for recipes",
+  [248706] = "Fill with crafted goods, turn in for recipes",
+  [248707] = "Fill with crafted goods, turn in for recipes",
+  [248708] = "Fill with crafted goods, turn in for recipes",
+  [248709] = "Fill with crafted goods, turn in for recipes",
+  [248710] = "Fill with crafted goods, turn in for recipes",
+  [248711] = "Fill with crafted goods, turn in for recipes",
+  [248712] = "Fill with crafted goods, turn in for recipes",
+  [248713] = "Fill with crafted goods, turn in for recipes",
+  [248768] = "Hand in to your faction's trade representative",
+  [248773] = "Hand in to your faction's trade representative",
+  [248778] = "Hand in to your faction's trade representative",
   -- Keys: a quest reward that does a job. Deleting it means going back for it.
   [9173] = "Needed to use the Gnomeregan teleporter in Booty Bay", -- Goblin Transponder
   -- Reagents whose only recipe has no skill data, so the reagent tables skip it

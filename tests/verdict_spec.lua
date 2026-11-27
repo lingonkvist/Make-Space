@@ -43,6 +43,16 @@ describe("Soulbound gear far below my level (reqLevel)", function()
     assert.is_nil(MakeSpace.Verdict.Evaluate(item, state))
   end)
 
+  it("no dot for a trinket, even when no effect was read from its tooltip", function()
+    -- A trinket is worn for what it does. One the scanner read as plain is a missed
+    -- Use line, not a dull trinket, so it is never called outdated.
+    local item = { id = 280766, isBound = true, isEquippable = true, equipSlot = "INVTYPE_TRINKET",
+                   reqLevel = 20, quality = 2 }
+    local state = { class = "Warrior", race = "Human", level = 55 }
+
+    assert.is_nil(MakeSpace.Verdict.Evaluate(item, state))
+  end)
+
   it("no dot when NOT soulbound even if 20+ levels below", function()
     local item = { id = 33004, isBound = false, isEquippable = true, reqLevel = 10 }
     local state = { class = "Warrior", race = "Human", level = 50 }
@@ -4632,5 +4642,80 @@ describe("Naming the best potion or bandage", function()
   it("puts the tiers back", function()
     MakeSpace.Data.ConsumableTiers = saved
     assert.are.equal(saved, MakeSpace.Data.ConsumableTiers)
+  end)
+end)
+
+
+describe("A recipe you already know", function()
+  local state = { class = "Warrior", race = "Human", level = 55,
+                  professionsKnown = true, professionNames = { Alchemy = true }, professionRanks = { Alchemy = 200 } }
+  local function recipe(extra)
+    local item = { id = 33900, classID = 9, subClassID = 6, quality = 1, recipeKnown = true }
+    for k, v in pairs(extra or {}) do item[k] = v end
+    return item
+  end
+
+  it("is green when it is soulbound: nobody can use or sell it", function()
+    local verdict, reason = MakeSpace.Verdict.Evaluate(recipe({ isBound = true }), state)
+    assert.are.equal("green", verdict)
+    assert.are.equal("Recipe already learned", reason)
+  end)
+
+  it("is a hint to auction when it can still be traded", function()
+    local verdict, reason, _, _, rule, heading = MakeSpace.Verdict.Evaluate(recipe({ isBound = false }), state)
+    assert.are.equal("yellow", verdict)
+    assert.are.equal("recipe", rule)
+    assert.are.equal("Known recipe", heading.title)
+    assert.is_truthy(reason:find("learned"))
+  end)
+
+  it("is judged as before when you do not know it", function()
+    local item = recipe({ isBound = true, recipeKnown = false })
+    assert.is_nil(MakeSpace.Verdict.Evaluate(item, state))
+  end)
+
+  it("is green even for a profession you no longer have a use for", function()
+    local noProfession = { class = "Warrior", race = "Human", level = 55,
+                           professionsKnown = true, professionNames = {}, professionRanks = {} }
+    assert.are.equal("green", (MakeSpace.Verdict.Evaluate(recipe({ isBound = true }), noProfession)))
+  end)
+end)
+
+
+describe("Items that are only read", function()
+  local state = { class = "Warrior", race = "Human", level = 55 }
+  local function withReadOnly(entries, run)
+    local saved = MakeSpace.Data.ReadOnlyItems
+    MakeSpace.Data.ReadOnlyItems = entries
+    local ok, err = pcall(run)
+    MakeSpace.Data.ReadOnlyItems = saved
+    assert.is_true(ok)
+    return err
+  end
+
+  it("is green with the reason from the data, even for a quest-class item", function()
+    withReadOnly({ [11482] = "Reference only, pylons work without it" }, function()
+      local item = { id = 11482, classID = 12, subClassID = 0, quality = 1, isBound = true }
+      local verdict, reason, _, _, rule = MakeSpace.Verdict.Evaluate(item, state)
+      assert.are.equal("green", verdict)
+      assert.are.equal("Reference only, pylons work without it", reason)
+      assert.are.equal("read_only", rule)
+    end)
+  end)
+
+  it("stays silent while a quest still asks for the item", function()
+    withReadOnly({ [11482] = "Reference only" }, function()
+      MakeSpace.Data.QuestInfo = MakeSpace.Data.QuestInfo or {}
+      local item = { id = 11482, classID = 12, subClassID = 0, quality = 1,
+                     questItemQuestIDs = { 4284 }, allQuestObjectivesCompleted = false }
+      assert.is_truthy(MakeSpace.Verdict.Evaluate(item, state) ~= "green")
+    end)
+  end)
+
+  it("leaves every other item alone", function()
+    withReadOnly({ [11482] = "Reference only" }, function()
+      local item = { id = 11483, classID = 12, subClassID = 0, quality = 1 }
+      assert.is_nil((MakeSpace.Verdict.Evaluate(item, state)))
+    end)
   end)
 end)

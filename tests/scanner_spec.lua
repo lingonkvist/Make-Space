@@ -40,6 +40,7 @@ local ITEMS = {
   [900] = { "Old Blue Chest", 3, 10, 10, 1, "INVTYPE_CHEST", 300, 4, 1 },
   [901] = { "Worn White Chest", 1, 30, 20, 1, "INVTYPE_CHEST", 100, 4, 1 },
   [902] = { "Worn Blue Chest", 3, 40, 30, 1, "INVTYPE_CHEST", 900, 4, 1 },
+  [905] = { "Recipe: Test Elixir", 1, 10, 5, 1, "", 100, 9, 6 }, -- an Alchemy recipe
   [904] = { "Test Satchel", 2, 33, 1, 1, "INVTYPE_CLOAK", 20, 4, 1 }, -- low item level, Use effect
 }
 local bags, freeByBag, loot
@@ -360,6 +361,53 @@ describe("Scanner: a Use effect that shows up late", function()
     assert.is_nil(verdictNow())
     line, clock = "Soulbound", 5
     assert.is_nil(verdictNow())
+  end)
+end)
+
+describe("Scanner: a recipe you already know", function()
+  local line
+  local function scan(bound)
+    setUp({ [0] = { { id = 905, bound = bound } } }, { [0] = 0 })
+    local plain = _G.C_Container.GetContainerItemInfo
+    _G.C_Container.GetContainerItemInfo = function(bag, slot)
+      local info = plain(bag, slot)
+      if info then info.hyperlink = "|cffffffff|Hitem:905::::::::48:::::::::|h[Recipe: Test Elixir]|h|r" end
+      return info
+    end
+    _G.UIParent = {}
+    _G.RETRIEVING_ITEM_INFO, _G.MakeSpaceSkillTipTextLeft1 = nil, nil
+    _G.MakeSpaceSkillTipTextLeft2 = { GetText = function() return line end }
+    _G.CreateFrame = function()
+      return { SetOwner = function() end, ClearLines = function() end,
+               SetBagItem = function() end, NumLines = function() return 2 end }
+    end
+    MakeSpace.Scanner.ClearTooltipCache()
+    MakeSpace.Scanner.ClearCache()
+    MakeSpace.Scanner.ScanAll()
+    return MakeSpace.Scanner.GetResult(0, 1)
+  end
+
+  it("is green when the tooltip says Already known and the recipe is soulbound", function()
+    line = "Already known"
+    local result = scan(true)
+    assert.are.equal("green", result.verdict)
+    assert.are.equal("Recipe already learned", result.reason)
+  end)
+
+  it("is not judged known when the tooltip does not say so", function()
+    line = "Requires Alchemy (10)"
+    local result = scan(true)
+    assert.is_truthy(result.verdict ~= "green")
+  end)
+
+  it("is judged again once learning the recipe changes the tooltip", function()
+    line = "Requires Alchemy (10)"
+    assert.is_truthy(scan(true).verdict ~= "green")
+    line = "Already known"
+    MakeSpace.Scanner.ForgetKnownRecipes()
+    MakeSpace.Scanner.ClearCache()
+    MakeSpace.Scanner.ScanAll()
+    assert.are.equal("green", MakeSpace.Scanner.GetResult(0, 1).verdict)
   end)
 end)
 

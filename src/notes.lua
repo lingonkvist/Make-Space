@@ -43,7 +43,7 @@ local MARKED = "Marked by you"
 -- Hints whose whole point is "you cannot use this, so it may sell". When the
 -- auction pays next to nothing and the stack is worth next to nothing, such a
 -- hint can turn into "worth very little" (see runRule in verdict.lua).
-local HINTS_AT_AUCTION = { not_your_profession = true, other_profession_reagent = true }
+local HINTS_AT_AUCTION = { not_your_profession = true, other_profession_reagent = true, recipe_known = true }
 
 local function capitalize(text)
   return (text:gsub("^%l", string.upper))
@@ -102,6 +102,9 @@ local NOTES = {
   end,
   not_your_profession = function()
     return "You don't have this profession", "Not your profession", nil
+  end,
+  recipe_known = function()
+    return "Recipe already learned, it may sell", "Known recipe", nil
   end,
   later_skill = function(profession, skill)
     return neededLater("at " .. profession .. " " .. skill, "Requires " .. profession .. " " .. skill)
@@ -200,6 +203,12 @@ end
 -- delete" and shows the reason under it), so each note gives a reason and, where
 -- there is one, a detail.
 local GREEN_NOTES = {
+  read_only = function(reason)
+    return Cut(reason, MakeSpace.Notes.LINE_MAX)
+  end,
+  recipe_known = function()
+    return "Recipe already learned"
+  end,
   quest_completed = function(label)
     -- One line: the quest, then that it is done. Without a name, just that it is done.
     if not label then return "Quest completed" end

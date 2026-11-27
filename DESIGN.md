@@ -67,6 +67,12 @@ Keep it short. An entry needs a reason, or it does not belong. When a test enfor
 - **Every tooltip line fits 45 characters, and says one fact.** Notes are written to fit, not wrapped: names are cut with `Notes.Cut`, lists name two and count the rest, and a completed quest is one line (`[40] Name (completed)`). `tests/notes_spec.lua` feeds each note its longest realistic input. A fixed shape beats merging lines per tooltip, because the same verdict should always look the same (0.7.5).
 - **One word per idea.** "Requires" for requirements, as the item's own tooltip says it, "Used by", "Best for you:", "Hand in to". A detail never repeats a word its title already says: "Needed later" is followed by "Requires", not "Needs" (0.7.5).
 - **"Needed later" never shows while a quest in your log wants the item.** The quest row says why instead (0.7.5).
+- **A known recipe is read from the tooltip's "Already known" line.** Soulbound, it is green (nothing can use or sell it); tradeable, it is a yellow hint that it may sell, with the usual price line. Learning a recipe clears the stored answers for recipes, since it changes the tooltip of every copy still in the bags (0.7.6).
+- **A trinket is never called outleveled.** One is worn for what it does. A trinket the scanner read as plain is a missed Use line, not a dull trinket, and a wrong green is the costly mistake (0.7.6).
+- **Read-only items are a hand-kept list** (`data/read_only_items.lua`): lore books and manuals whose text is on any wiki. An entry needs no use effect, no quest it starts, no vendor value and no hand-in in the game data. It lifts only the item-class protections; a quest that still asks for the item keeps it safe (0.7.6).
+- **Artisan crates are in the known-use list.** A Waylaid Crate uses up crafted goods and becomes a Sealed Artisan Crate, handed in for the currency that buys profession recipes. They report `lootable=0` because they open by a spell, so the list is what explains their silence in the tooltip (0.7.6).
+- **The addon sits under Inventory in the AddOns list** (`## Category: Inventory`, the game's own name for bag, bank and guild bank addons) (0.7.6).
+- **A dot is checked against the button that carries it.** A bag addon that recycles a button for an empty slot never calls us, so a dot whose button shows no icon is hidden on every scan and again when the button is shown (0.7.6).
 
 ## Turned down
 
@@ -79,4 +85,4 @@ Keep it short. An entry needs a reason, or it does not belong. When a test enfor
 
 ## Open
 
-- **Waylaid Crates** report `lootable=0`, so no "Open it" hint. Needs the tooltip text to know how they open.
+- **Sealed Artisan's Writ** (262890) has a spell that uses it up and says "a pending crafting order". It is silent for now. What it does is unconfirmed, so it is not in the known-use list.

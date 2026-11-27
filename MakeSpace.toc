@@ -2,7 +2,8 @@
 ## Title: Make Space
 ## Notes: Colored dots on bag items that mark what to delete, vendor, bank or keep
 ## Author: lingonkvist
-## Version: 0.7.5
+## Category: Inventory
+## Version: 0.7.6
 ## IconTexture: Interface\AddOns\MakeSpace\textures\icon
 ## SavedVariables: MakeSpaceAccountDB
 ## SavedVariablesPerCharacter: MakeSpaceDB
@@ -38,6 +39,7 @@ data\locked_items.lua
 data\mana_consumables.lua
 data\consumable_tiers.lua
 data\library_books.lua
+data\read_only_items.lua
 data\quest_availability.lua
 data\auction_prices_us_alliance.lua
 data\auction_prices_us_horde.lua

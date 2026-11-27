@@ -238,7 +238,9 @@ local EVENT_HANDLERS = {
   QUEST_REMOVED          = invalidateAndRescan,
   SKILL_LINES_CHANGED    = invalidateAndRescan,
   SPELLS_CHANGED         = function(self)
-    if MakeSpace.Scanner.BestBandageChanged() then invalidateAndRescan(self) end
+    -- Learning a recipe changes what every copy of it in the bags says.
+    MakeSpace.Scanner.ForgetKnownRecipes()
+    invalidateAndRescan(self)
   end,
   PLAYER_EQUIPMENT_CHANGED = invalidateAndRescan,
   LOOT_OPENED            = onLootOpened,

@@ -9,7 +9,7 @@ local DATA_FILES = {
   "reagent_professions", "reagent_chains", "vendor_reagents", "class_reagents",
   "quest_items", "mana_consumables", "protected_items", "auction_prices_us_alliance", "auction_prices_us_horde",
   "auction_prices_eu_alliance", "auction_prices_eu_horde", "library_books", "quest_availability", "consumable_tiers",
-  "weapon_skills", "locked_items",
+  "weapon_skills", "locked_items", "read_only_items",
 }
 for _, file in ipairs(DATA_FILES) do
   dofile("data/" .. file .. ".lua")
@@ -228,6 +228,33 @@ describe("ProtectedItems", function()
       assert.is_truthy(#note > 0 and #note <= 62)
     end
     assert.is_truthy(count > 0)
+  end)
+end)
+
+
+describe("ReadOnlyItems", function()
+  it("holds only item IDs with a short reason, and none a quest still asks for", function()
+    local count = 0
+    for id, reason in pairs(MakeSpace.Data.ReadOnlyItems) do
+      count = count + 1
+      assert.are.equal("number", type(id))
+      assert.are.equal("string", type(reason))
+      assert.is_truthy(#reason > 0 and #reason <= 45)
+      assert.is_nil(MakeSpace.Data.QuestItems[id])
+    end
+    assert.is_truthy(count > 0)
+  end)
+end)
+
+
+describe("ProtectedItems: artisan crates", function()
+  it("covers every Waylaid Crate and the Sealed Artisan Crate you turn in", function()
+    local ids = { 248549, 248682, 248699, 248702, 248713, 248768, 248773, 248778 }
+    local missing = {}
+    for _, id in ipairs(ids) do
+      if not MakeSpace.Data.ProtectedItems[id] then missing[#missing + 1] = id end
+    end
+    assert.are.equal("", table.concat(missing, " "))
   end)
 end)
 

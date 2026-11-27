@@ -485,18 +485,25 @@ local function eachTooltipLine(bag, slot, first, visit, blank)
   return true
 end
 
-local function readRequiredSkill(bag, slot)
+-- The game's own words for a recipe you have learned, so other locales match.
+local KNOWN_LINE = _G.ITEM_SPELL_KNOWN or "Already known"
+
+-- What a recipe's tooltip says, in one pass: the skill that gates learning it, and
+-- whether you already know it.
+local function readRecipeFacts(bag, slot)
   local pattern = requiredSkillPattern()
-  if not pattern then return nil end
   -- A recipe's tooltip can embed a preview of the item it makes, with that
   -- item's own "Requires First Aid (150)". The recipe's own line comes last, so
   -- the last match is the one that gates learning it.
-  local found
+  local found, known
   eachTooltipLine(bag, slot, 2, function(content)
-    local _, number = content:match(pattern)
-    if number then found = tonumber(number) end
+    if content:sub(1, #KNOWN_LINE) == KNOWN_LINE then known = true end
+    if pattern then
+      local _, number = content:match(pattern)
+      if number then found = tonumber(number) end
+    end
   end)
-  return found
+  return found, known or false
 end
 
 -- Tooltip prefixes, from the game's own strings so other locales match.
@@ -684,7 +691,7 @@ local function gatherItem(bag, slot, state)
     item.hasEffect = readTooltipOnce("effect", readHasEffect, bag, slot, item.link, true)
   end
   if item and item.classID == RECIPE_CLASS_ID then
-    item.requiredSkill = readTooltipOnce("skill", readRequiredSkill, bag, slot, item.link)
+    item.requiredSkill, item.recipeKnown = readTooltipOnce("recipe", readRecipeFacts, bag, slot, item.link)
   elseif item and item.classID == CONSUMABLE_CLASS_ID
       and (item.subClassID == POTION_SUBCLASS_ID or item.subClassID == FOOD_SUBCLASS_ID) then
     item.restoresHealthOrMana, item.givesBuff, item.restoresManaOnly =
@@ -740,7 +747,7 @@ local function evaluateCached(item, state, profKey)
       .. ":" .. tostring(item.isMarkedGreen)
       .. ":" .. tostring(item.count)
       .. ":" .. tostring(item.hasLoot)
-      .. ":" .. tostring(item.requiredSkill) .. ":" .. tostring(item.restoresHealthOrMana) .. ":" .. tostring(item.givesBuff)
+      .. ":" .. tostring(item.requiredSkill) .. ":" .. tostring(item.recipeKnown) .. ":" .. tostring(item.restoresHealthOrMana) .. ":" .. tostring(item.givesBuff)
       .. ":" .. tostring(item.givesStats) .. ":" .. tostring(item.levelLimited)
       .. ":" .. tostring(item.restoresManaOnly)
       .. ":" .. tostring(item.hasEffect)
@@ -1308,6 +1315,14 @@ end
 -- tooltip says, so clearing it there would only bring the cost back.
 function MakeSpace.Scanner.ClearTooltipCache()
   tooltipFacts = {}
+end
+
+--- Forget only which recipes were read as known. Learning one changes the tooltip of
+-- every copy still in the bags, and it is the one tooltip fact that changes in play.
+function MakeSpace.Scanner.ForgetKnownRecipes()
+  for key in pairs(tooltipFacts) do
+    if key:sub(1, 7) == "recipe|" then tooltipFacts[key] = nil end
+  end
 end
 
 --- Count scanned slots by verdict (for /makespace status).

@@ -252,8 +252,18 @@ local function makeDotHolder(button)
   holder:SetAllPoints(button)
   holder:SetFrameLevel(button:GetFrameLevel() + DOT_FRAME_LEVEL_BOOST)
   if holder.EnableMouse then holder:EnableMouse(false) end
+  -- A bag addon that shows a recycled button again gives us no call when the slot
+  -- it now shows is empty (it has no item to decorate). Look once its redraw is done.
+  if holder.HookScript and C_Timer and C_Timer.After then
+    holder:HookScript("OnShow", function()
+      C_Timer.After(0, function() MakeSpace.Overlay.ClearStaleDots() end)
+    end)
+  end
   return holder
 end
+
+-- The button each dot sits on, so a dot can be checked against what its button shows.
+local buttonByDotTexture = setmetatable({}, { __mode = "k" })
 
 local function getButtonDot(button)
   local dot = dotsByButton[button]
@@ -262,7 +272,21 @@ local function getButtonDot(button)
   dot = makeDot(holder)
   dot:SetPoint("CENTER", holder, "TOPRIGHT", DOT_OFFSET_X - DOT_SIZE / 2, DOT_OFFSET_Y - DOT_SIZE / 2)
   dotsByButton[button] = dot
+  buttonByDotTexture[dot] = button
   return dot
+end
+
+-- True only when the button can be seen to show an empty slot: its icon has no
+-- texture. A button with no icon we can find is not judged, so a bag addon that
+-- keeps its icon elsewhere is never hidden by mistake.
+local function showsEmptySlot(button)
+  if not button then return false end
+  local icon = button.icon or button.Icon
+  if not icon and button.GetName then
+    local name = button:GetName()
+    icon = name and _G[name .. "IconTexture"] or nil
+  end
+  return (icon and icon.GetTexture and icon:GetTexture() == nil) and true or false
 end
 
 -- The item menu: alt-right-click on an item button (shift is taken by stack
@@ -888,9 +912,14 @@ local function clearStaleDots()
   if not (MakeSpace.Scanner and MakeSpace.Scanner.GetResult) then return end
   for dot, slot in pairs(dotSlots) do
     local result = MakeSpace.Scanner.GetResult(slot[1], slot[2])
-    if not (result and result.verdict and not result.quiet) then applyDot(dot, nil) end
+    local keep = result and result.verdict and not result.quiet
+    -- A recycled button now showing an empty slot keeps its old dot otherwise: the
+    -- slot it was painted for may still hold an item with a verdict.
+    if not keep or showsEmptySlot(buttonByDotTexture[dot]) then applyDot(dot, nil) end
   end
 end
+
+MakeSpace.Overlay.ClearStaleDots = function() clearStaleDots() end
 
 function MakeSpace.Overlay.UpdateAll()
   clearStaleGlows()

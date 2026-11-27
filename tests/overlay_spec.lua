@@ -702,6 +702,61 @@ describe("Baganator adapter", function()
     tearDown()
   end)
 
+  it("hides the dot of a button that was recycled to an empty slot, though its old slot still has a verdict", function()
+    installBaganator()
+    local _, dot, button = paint({ itemLocation = { bagID = 0, slotIndex = 3 }, itemLink = "item:111" })
+    assert.is_truthy(dot.shown)
+
+    -- Baganator recycles the button for an empty slot and, having no item to
+    -- decorate, never calls onUpdate. The scanner still holds a verdict for 0:3.
+    local iconTexture = nil
+    button.icon = { GetTexture = function() return iconTexture end }
+    MakeSpace.Overlay.UpdateAll()
+
+    assert.is_false(dot.shown)
+    tearDown()
+  end)
+
+  it("looks again when a recycled button is shown again, after the bag addon has redrawn it", function()
+    installBaganator()
+    local onShow, queued, dot = nil, {}, nil
+    _G.C_Timer = { After = function(_, fn) queued[#queued + 1] = fn end }
+    _G.CreateFrame = function()
+      local frame = {}
+      function frame:SetAllPoints() end
+      function frame:SetFrameLevel() end
+      function frame:EnableMouse() end
+      function frame:CreateTexture() dot = makeDotTexture(); return dot end
+      function frame:HookScript(name, fn) if name == "OnShow" then onShow = fn end end
+      return frame
+    end
+    local button = makeButton(0, 3)
+    function button:GetFrameLevel() return 7 end
+    local placeholder = onInit(button)
+    onUpdate(placeholder, { itemLocation = { bagID = 0, slotIndex = 3 }, itemLink = "item:111" })
+    _G.CreateFrame = nil
+    assert.is_truthy(dot and dot.shown)
+    assert.is_truthy(onShow)
+
+    -- The button is shown again for an empty slot; the redraw finishes after the show.
+    onShow()
+    button.icon = { GetTexture = function() return nil end }
+    assert.is_truthy(dot.shown)
+    for _, fn in ipairs(queued) do fn() end
+    assert.is_false(dot.shown)
+    _G.C_Timer = nil
+    tearDown()
+  end)
+
+  it("keeps the dot of a button whose icon is showing", function()
+    installBaganator()
+    local _, dot, button = paint({ itemLocation = { bagID = 0, slotIndex = 3 }, itemLink = "item:111" })
+    button.icon = { GetTexture = function() return 134400 end }
+    MakeSpace.Overlay.UpdateAll()
+    assert.is_truthy(dot.shown)
+    tearDown()
+  end)
+
   it("takes a delete glow off a button that now shows an empty or foreign slot", function()
     installBaganator()
     installScanner({ ["0:3"] = { verdict = "green", glow = true } })

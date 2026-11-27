@@ -72,6 +72,8 @@ local PLACEHOLDER_ITEM_LEVEL = 1
 local function evaluateLevelGap(item, state)
   if not (item.isBound and item.isEquippable) then return nil end
   if item.hasEffect then return nil end
+  -- A trinket is worn for what it does, so one read as plain is a missed Use line.
+  if item.equipSlot == "INVTYPE_TRINKET" then return nil end
   if couldBeUpgrade(item) then return nil end
 
   -- A low required level does not make gear outdated by itself: plenty of
@@ -668,6 +670,14 @@ local function evaluateNoRecipeUse(item, state)
   return green("no_known_use")
 end
 
+-- Lore books and manuals that nothing uses (data/read_only_items.lua). The data
+-- gives the reason. Safety still holds back an item a quest asks for.
+local function evaluateReadOnly(item)
+  local reason = MakeSpace.Data.ReadOnlyItems and MakeSpace.Data.ReadOnlyItems[item.id]
+  if not reason then return nil end
+  return green("read_only", reason)
+end
+
 -- Recipes and the reagents behind them. A recipe's item subclass says which
 -- profession it teaches. Nothing here says "delete": a recipe for a profession
 -- you do not have may sell, and one you cannot use yet is only taking up room,
@@ -701,6 +711,12 @@ local function evaluateRecipe(item, state)
   if item.classID ~= RECIPE_CLASS_ID then return nil end
   local profession = RECIPE_PROFESSIONS[item.subClassID]
   if not profession then return nil end
+  -- A recipe you already know teaches nothing. Bound, it cannot be sold either; a
+  -- tradeable one may still sell, so it only gets the auction hint.
+  if item.recipeKnown then
+    if item.isBound then return green("recipe_known") end
+    return yellow("recipe_known")
+  end
   if state.professionsKnown == false or not state.professionNames then return nil end
 
   if not state.professionNames[profession] then
@@ -1518,6 +1534,10 @@ local RULES = {
     overrides = { quest_item = true } },
   { name = "quest_objective_done", evaluate = evaluateQuestObjective, checksAuction = true,
     overrides = { quest_item = true } },
+  -- The quest class protects an item until its quests are done; an open quest that
+  -- asks for it is still held back by open_quest_item.
+  { name = "read_only",          evaluate = evaluateReadOnly,
+    overrides = { essential_item = true, quest_item = true } },
   { name = "item_hint",          evaluate = evaluateItemHint, scope = "any" },
   { name = "trivial_quest_item", evaluate = evaluateTrivialQuestItem },
   { name = "distant_quest_item", evaluate = evaluateDistantQuestItem },
@@ -1540,7 +1560,9 @@ local RULES = {
     showsAuctionPrice = true },
   { name = "recipe",             evaluate = evaluateRecipe, showsAuctionPrice = true,
     worthlessIsGreen = true, worthlessOnlyForAuctionHints = true,
-    worthlessOverrides = WORTHLESS_RECIPE_OVERRIDES },
+    worthlessOverrides = WORTHLESS_RECIPE_OVERRIDES,
+    -- Recipes are protected as a class; only a bound one you already know is lifted.
+    overrides = { essential_item = true } },
   { name = "distant_reagent",    evaluate = evaluateDistantReagent, cheapIsGreen = true },
   { name = "outleveled_reagent", evaluate = evaluateOutleveledReagent, showsAuctionPrice = true,
     worthlessIsGreen = true },

@@ -18,11 +18,13 @@ Hover an item for the reason. On an item with no dot, the tooltip names the ques
 
 - Quest items whose quests are all done.
 - Vendor-sold reagents for professions you do not have, and class reagents for other classes.
-- Bound gear 20 or more levels below you (rare and better stay yellow). Gear with a Use effect, proc or special Equip effect is left alone.
+- Bound gear 20 or more levels below you (rare and better stay yellow). Gear with a Use effect, proc or special Equip effect is left alone, and so is any trinket.
 - White armor your class cannot wear (yet), or that you have outgrown because you wear green or better in that slot.
 - White weapons your class can never learn, and ammo for a class with no matching ranged weapon. Follows Forever's own skill data (rogues use axes there).
 - The cheapest gray. Deleting it lights the next. At a vendor, every gray that sells lights green (its price in the tooltip).
 - Trade goods that no recipe or quest uses.
+- Recipes you already know, when they are soulbound (nothing can use or sell them).
+- Lore books and manuals with no use: the Tale of I'lalai books and the Crystal Pylon User's Manual. A quest that still asks for one keeps it safe.
 - Worth very little: recipes and reagents you cannot use (or have outleveled) when the auction pays too little to list and the whole slot sells for under 50c (5c per level above 10). A missing price never counts.
 - Tradable green gear (not for Enchanters) that auctions for about what a vendor pays: "Safe to vendor", with both prices shown.
 
@@ -33,6 +35,7 @@ Hover an item for the reason. On an item with no dot, the tooltip names the ques
 - Unused trade goods or a gray that sell for a fair price.
 - Things to open: clams, loot bags, and lockboxes (for a rogue who can Pick Lock).
 - Recipes for a profession you do not have (unbound ones).
+- Recipes you already know that can still be traded: they may sell.
 - **Needed later:** recipes more than 25 skill points above you, and reagents more than 50 above you (25 once you have stopped leveling that profession for 6 hours). A profession counts as idle after 12 hours without a skill gain and a new play session. Also a reagent whose next use is far ahead once your skill is past an earlier one. A listed stack that costs next to nothing to buy again (about half the value where a gray stops being plain junk) gets a green instead: `Cheap to rebuy, used from Cooking 145`.
 - **Outleveled reagents:** once the last recipe that uses the item (directly, or through what it is turned into) has turned green. Copper bars stay safe while bronze still needs them. A quest that wants the item does not hold the hint back; the tooltip adds a quest row instead.
 - **Outleveled consumables:** food, drink, potions, elixirs, flasks and stat scrolls that need a level 10 or more below yours (15 from level 55). Food, drink and stat scrolls only when your bags hold a better one you can use. Potions say which to use instead: `Best for you: Major Healing Potion (level 45)`. Items with their own level limit, non-stat elixirs and food with an effect are left alone. A quest you could still take that wants the item is named under the hint.
